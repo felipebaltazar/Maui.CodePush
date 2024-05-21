@@ -1,1 +1,1 @@
-# Maui.Codepush
+# Maui.CodePush
