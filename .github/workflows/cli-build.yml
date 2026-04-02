@@ -1,0 +1,48 @@
+name: CLI - Build & Package
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Maui.CodePush.Cli/**'
+      - '.github/workflows/cli-build.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Maui.CodePush.Cli/**'
+      - '.github/workflows/cli-build.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Inject server URL
+        run: |
+          sed -i 's|#{CODEPUSH_SERVER_URL}#|${{ secrets.CODEPUSH_SERVER_URL }}|g' Maui.CodePush.Cli/appsettings.json
+
+      - name: Restore
+        run: dotnet restore Maui.CodePush.Cli/Maui.CodePush.Cli.csproj
+
+      - name: Build
+        run: dotnet build Maui.CodePush.Cli/Maui.CodePush.Cli.csproj -c Release --no-restore
+
+      - name: Pack
+        if: github.event_name != 'pull_request'
+        run: dotnet pack Maui.CodePush.Cli/Maui.CodePush.Cli.csproj -c Release --no-build -o ./artifacts
+
+      - name: Upload artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: codepush-cli
+          path: ./artifacts/*.nupkg

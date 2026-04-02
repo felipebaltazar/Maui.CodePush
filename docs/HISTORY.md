@@ -135,3 +135,16 @@ Substituido EF Core + SQLite por MongoDB.Driver 3.4.0.
 - `.env.example` criado como referencia para setup na VPS
 - `.gitignore` atualizado: `.env`, `appsettings.Development.json`, `uploads/`
 - `Program.cs` atualizado: env vars tem prioridade sobre appsettings para todas as secrets
+
+### CI/CD Pipeline com aprovacao (2026-04-02)
+Workflow reestruturado em 2 jobs:
+- **build**: Roda em todo PR e push. dotnet restore+build + Docker build. Em PR so valida (nao pusha imagem). Em main, pusha para ghcr.io.
+- **deploy**: So roda em main, apos build. Requer aprovacao via environment `Production` (reviewers: felipebaltazar, DaviBittencourt). Faz SSH na VPS e `docker compose pull && up -d`.
+
+Secrets do environment Production: `VPS_HOST`, `VPS_USER`, `VPS_PASSWORD`.
+Fix critico: `Program.cs` sincroniza env var `CODEPUSH_JWT_SECRET` no `builder.Configuration["Jwt:Secret"]` para que `TokenService` use o mesmo segredo que o middleware JWT.
+
+### Primeiro deploy em producao (2026-04-02)
+- Servidor rodando em producao via Docker container (VPS, porta 8080)
+- MongoDB Atlas conectado e persistindo
+- Fluxo completo validado: registro -> login -> create app -> upload release -> check update -> download

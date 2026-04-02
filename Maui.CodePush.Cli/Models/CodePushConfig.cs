@@ -18,6 +18,19 @@ public class CodePushConfig
 
     [JsonPropertyName("adbPath")]
     public string? AdbPath { get; set; }
+
+    // Server config (set by `codepush login`)
+    [JsonPropertyName("serverUrl")]
+    public string? ServerUrl { get; set; }
+
+    [JsonPropertyName("appId")]
+    public string? AppId { get; set; }
+
+    [JsonPropertyName("token")]
+    public string? Token { get; set; }
+
+    [JsonPropertyName("apiKey")]
+    public string? ApiKey { get; set; }
 }
 
 public class ModuleConfig

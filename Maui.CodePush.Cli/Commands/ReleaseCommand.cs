@@ -11,40 +11,40 @@ public static class ReleaseCommand
     {
         var pathsArgument = new Argument<string[]>("paths") { Arity = ArgumentArity.ZeroOrMore, Description = "Module project (.csproj) or DLL (.dll) paths" };
 
-        var deviceOption = new Option<string?>("--device", "-d") { Description = "Target device serial" };
+        var deviceOption = new Option<string?>("--device", "-d") { Description = "Target device serial (adb mode)" };
         var packageNameOption = new Option<string?>("--package-name", "-p") { Description = "Android application ID" };
         var platformOption = new Option<string?>("--platform") { Description = "Target platform (default: from config or android)" };
-        var outputOption = new Option<string?>("--output", "-o") { Description = "Output directory instead of deploying to device" };
+        var outputOption = new Option<string?>("--output", "-o") { Description = "Output directory instead of deploying" };
         var noBuildOption = new Option<bool>("--no-build") { Description = "Skip build, treat paths as pre-built DLLs" };
         var configOption = new Option<string>("--configuration", "-c") { Description = "Build configuration", DefaultValueFactory = _ => "Release" };
-        var restartOption = new Option<bool>("--restart") { Description = "Force-stop and restart the app after deployment" };
+        var restartOption = new Option<bool>("--restart") { Description = "Force-stop and restart the app (adb mode)" };
+        var versionOption = new Option<string>("--version", "-v") { Description = "Release version (server mode)", DefaultValueFactory = _ => "1.0.0" };
+        var channelOption = new Option<string>("--channel") { Description = "Release channel", DefaultValueFactory = _ => "production" };
+        var localOption = new Option<bool>("--local") { Description = "Force deploy via adb instead of server" };
 
-        var command = new Command("release", "Build and deploy module updates to a connected device")
+        var command = new Command("release", "Build and deploy module updates (via server or adb)")
         {
-            pathsArgument,
-            deviceOption,
-            packageNameOption,
-            platformOption,
-            outputOption,
-            noBuildOption,
-            configOption,
-            restartOption
+            pathsArgument, deviceOption, packageNameOption, platformOption,
+            outputOption, noBuildOption, configOption, restartOption,
+            versionOption, channelOption, localOption
         };
 
         command.SetAction(async (parseResult, _) =>
         {
-            var paths = parseResult.GetValue(pathsArgument) ?? [];
-            var device = parseResult.GetValue(deviceOption);
-            var packageName = parseResult.GetValue(packageNameOption);
-            var platform = parseResult.GetValue(platformOption);
-            var output = parseResult.GetValue(outputOption);
-            var noBuild = parseResult.GetValue(noBuildOption);
-            var configuration = parseResult.GetValue(configOption)!;
-            var restart = parseResult.GetValue(restartOption);
-
             try
             {
-                await ExecuteAsync(paths, device, packageName, platform, output, noBuild, configuration, restart);
+                await ExecuteAsync(
+                    parseResult.GetValue(pathsArgument) ?? [],
+                    parseResult.GetValue(deviceOption),
+                    parseResult.GetValue(packageNameOption),
+                    parseResult.GetValue(platformOption),
+                    parseResult.GetValue(outputOption),
+                    parseResult.GetValue(noBuildOption),
+                    parseResult.GetValue(configOption)!,
+                    parseResult.GetValue(restartOption),
+                    parseResult.GetValue(versionOption)!,
+                    parseResult.GetValue(channelOption)!,
+                    parseResult.GetValue(localOption));
             }
             catch (Exception ex) when (ex is FileNotFoundException or AdbException or InvalidOperationException or ArgumentException)
             {
@@ -56,7 +56,8 @@ public static class ReleaseCommand
     }
 
     private static async Task ExecuteAsync(string[] paths, string? device, string? packageName,
-        string? platform, string? output, bool noBuild, string configuration, bool restart)
+        string? platform, string? output, bool noBuild, string configuration, bool restart,
+        string version, string channel, bool local)
     {
         var configManager = new ConfigManager();
         var builder = new ProjectBuilder();
@@ -69,15 +70,14 @@ public static class ReleaseCommand
         platform ??= config?.Platform ?? "android";
 
         var modulePaths = ResolveModulePaths(paths, config, projectDir);
-
         if (modulePaths.Count == 0)
         {
             WriteError("No modules specified. Pass project/DLL paths or configure modules in .codepush.json");
             return;
         }
 
+        // Build modules
         var deployments = new List<(string Name, string DllPath)>();
-
         foreach (var (name, path) in modulePaths)
         {
             if (path.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) && !noBuild)
@@ -87,18 +87,16 @@ public static class ReleaseCommand
                 WriteSuccess($"Built {name} -> {Path.GetFileName(dllPath)}");
                 deployments.Add((name, dllPath));
             }
-            else if (path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || noBuild)
-            {
-                if (!File.Exists(path))
-                    throw new FileNotFoundException($"DLL not found: {path}");
-                deployments.Add((name, Path.GetFullPath(path)));
-            }
             else
             {
-                throw new ArgumentException($"Unknown file type: {path}. Expected .csproj or .dll");
+                var resolved = Path.GetFullPath(path);
+                if (!File.Exists(resolved))
+                    throw new FileNotFoundException($"File not found: {resolved}");
+                deployments.Add((name, resolved));
             }
         }
 
+        // Output to directory
         if (!string.IsNullOrEmpty(output))
         {
             Directory.CreateDirectory(output);
@@ -111,14 +109,54 @@ public static class ReleaseCommand
             return;
         }
 
+        // Decide: server or adb
+        var serverUrl = config?.ServerUrl ?? CliSettings.DefaultServerUrl;
+        var hasServer = !string.IsNullOrEmpty(serverUrl) && !string.IsNullOrEmpty(config?.AppId) && !local;
+
+        if (hasServer)
+            await DeployViaServer(deployments, config!, serverUrl!, platform, version, channel);
+        else
+            await DeployViaAdb(deployments, config, packageName, device, restart);
+    }
+
+    private static async Task DeployViaServer(
+        List<(string Name, string DllPath)> deployments,
+        CodePushConfig config, string serverUrl, string platform, string version, string channel)
+    {
+        var client = new ServerClient(serverUrl, token: config.Token, apiKey: config.ApiKey);
+
+        WriteInfo($"Uploading to server...");
+
+        foreach (var (name, dllPath) in deployments)
+        {
+            var result = await client.UploadReleaseAsync(config.AppId!, dllPath, name, version, platform, channel);
+
+            var releaseId = result.GetProperty("releaseId").GetString();
+            var hash = result.GetProperty("dllHash").GetString();
+            var size = result.GetProperty("dllSize").GetInt64();
+
+            WriteSuccess($"Released {name} v{version} ({size} bytes, hash: {hash?[..12]}...)");
+            Console.WriteLine($"  Release ID: {releaseId}");
+            Console.WriteLine($"  Channel:    {channel}");
+            Console.WriteLine($"  Platform:   {platform}");
+        }
+
+        Console.WriteLine();
+        WriteSuccess("Release published. Apps will receive the update on next check.");
+    }
+
+    private static async Task DeployViaAdb(
+        List<(string Name, string DllPath)> deployments,
+        CodePushConfig? config, string? packageName, string? device, bool restart)
+    {
         if (string.IsNullOrEmpty(packageName))
-            throw new InvalidOperationException("Package name required. Use --package-name or configure in .codepush.json");
+            throw new InvalidOperationException("Package name required for adb deploy. Use --package-name or configure in .codepush.json");
 
         var adb = new AdbService();
         adb.FindAdb(config?.AdbPath);
         var deviceSerial = await adb.ResolveDeviceAsync(device);
 
-        WriteInfo($"Deploying to {deviceSerial}...");
+        WriteInfo($"Deploying to {deviceSerial} via adb...");
 
         foreach (var (name, dllPath) in deployments)
         {
@@ -132,11 +170,10 @@ public static class ReleaseCommand
             await adb.ForceStopAppAsync(deviceSerial, packageName);
             await Task.Delay(1000);
             await adb.StartAppAsync(deviceSerial, packageName);
-            WriteSuccess("App restarted. Update will be applied.");
+            WriteSuccess("App restarted.");
         }
         else
         {
-            Console.WriteLine();
             WriteInfo("Restart the app to apply the update.");
         }
     }
