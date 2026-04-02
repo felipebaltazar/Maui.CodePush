@@ -9,7 +9,7 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 		<Version>0.1.0-pre</Version>
-		<PackageId>Maui.CodePush</PackageId>
+		<PackageId>CodePush.Maui</PackageId>
 		<Description>Code push / OTA updates for .NET MAUI apps. Push hotfixes directly to Android and iOS without app store review.</Description>
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">21.0</SupportedOSPlatformVersion>
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
