@@ -26,6 +26,9 @@ var jwtSecret = Environment.GetEnvironmentVariable("CODEPUSH_JWT_SECRET")
     ?? builder.Configuration["Jwt:Secret"]
     ?? throw new InvalidOperationException("JWT secret is not configured.");
 
+// Sync the secret into configuration so TokenService reads the same value
+builder.Configuration["Jwt:Secret"] = jwtSecret;
+
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = "MultiScheme";
