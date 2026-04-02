@@ -4,6 +4,8 @@
 ## Get latest from https://github.com/github/gitignore/blob/main/VisualStudio.gitignore
 
 # Secrets and local config
+test-credentials.md
+dev-setup.md
 appsettings.Development.json
 appsettings.*.local.json
 .codepush.json
