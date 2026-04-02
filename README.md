@@ -150,13 +150,124 @@ This is the same approach used by React Native CodePush and Shorebird — interp
 └─────────────────────────────────────────────┘
 ```
 
+## Self-hosted Server
+
+Host your own CodePush server with Docker. Works on **Linux**, **macOS**, and **Windows**.
+
+### Quick Install (Linux / macOS)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/felipebaltazar/Maui.CodePush/main/scripts/install-server.sh | bash
+```
+
+### Quick Install (Windows PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/felipebaltazar/Maui.CodePush/main/scripts/install-server.ps1 | iex
+```
+
+### What the installer does
+
+1. Checks that Docker is installed
+2. Asks for install directory, MongoDB connection, and server port
+3. Generates a secure JWT secret
+4. Optionally adds a local MongoDB container (if using localhost)
+5. Creates `.env` and `docker-compose.yml`
+6. Pulls the Docker image from `ghcr.io/felipebaltazar/codepush-server:latest`
+7. Starts the server and verifies it's running
+
+### Manual Install
+
+If you prefer to set up manually:
+
+```bash
+mkdir codepush && cd codepush
+
+# Create .env
+cat > .env <<EOF
+MONGODB_CONNECTION_STRING=mongodb://localhost:27017
+MONGODB_DATABASE_NAME=codepush
+CODEPUSH_JWT_SECRET=$(openssl rand -base64 48)
+CODEPUSH_PORT=8080
+EOF
+
+# Create docker-compose.yml
+cat > docker-compose.yml <<'EOF'
+services:
+  codepush-server:
+    image: ghcr.io/felipebaltazar/codepush-server:latest
+    container_name: codepush-server
+    restart: unless-stopped
+    ports:
+      - "${CODEPUSH_PORT:-8080}:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - MONGODB_CONNECTION_STRING=${MONGODB_CONNECTION_STRING}
+      - MONGODB_DATABASE_NAME=${MONGODB_DATABASE_NAME:-codepush}
+      - CODEPUSH_JWT_SECRET=${CODEPUSH_JWT_SECRET}
+    volumes:
+      - codepush-uploads:/app/uploads
+
+  mongo:
+    image: mongo:7
+    container_name: codepush-mongo
+    restart: unless-stopped
+    volumes:
+      - codepush-mongo-data:/data/db
+
+volumes:
+  codepush-uploads:
+  codepush-mongo-data:
+EOF
+
+# Start
+docker compose up -d
+```
+
+### After installation
+
+```bash
+# Install the CLI
+dotnet tool install -g dotnet-codepush --prerelease
+
+# Register and login
+codepush login --server http://YOUR_SERVER:8080 \
+  --email you@email.com --password yourpass --register --name "Your Name"
+
+# Create your app
+codepush apps add --package-name com.yourapp --name "My App" --set-default
+```
+
+### Managing the server
+
+```bash
+cd /opt/codepush  # or your install directory
+
+docker compose up -d      # Start
+docker compose down        # Stop
+docker compose pull        # Update to latest version
+docker compose up -d       # Restart with new version
+docker logs -f codepush-server  # View logs
+```
+
+### Environment variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `MONGODB_CONNECTION_STRING` | Yes | MongoDB connection string |
+| `MONGODB_DATABASE_NAME` | No | Database name (default: `codepush`) |
+| `CODEPUSH_JWT_SECRET` | Yes | Secret key for JWT tokens (min 32 chars) |
+| `CODEPUSH_PORT` | No | Server port (default: `8080`) |
+
+---
+
 ## Roadmap
 
 | Phase | Status | Description |
 |-------|--------|-------------|
-| **1 - Local MVP** | **In Progress** | Core engine, MSBuild targets, version tracking, rollback. Android validated on physical device. |
-| **2 - Server + CLI** | Planned | Backend API, `dotnet-codepush` CLI, code signing (RSA-2048), differential updates (bsdiff) |
-| **3 - Production** | Planned | CDN distribution, staged rollouts, analytics dashboard, MonoVM interpreter optimizations |
+| **1 - Core Engine** | **Done** | Assembly loading, MSBuild targets, version tracking. Validated on Android device. |
+| **2 - Server + CLI** | **Done** | REST API (MongoDB), CLI tool, release/patch model with dependency checks, git tags |
+| **3 - Production** | Planned | Code signing (RSA-2048), differential updates (bsdiff), CDN, staged rollouts, analytics |
 
 ## App Store Compliance
 
