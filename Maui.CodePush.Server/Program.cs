@@ -102,6 +102,8 @@ app.MapAuthEndpoints();
 app.MapAppEndpoints();
 app.MapReleaseEndpoints();
 app.MapUpdateEndpoints();
+app.MapAppReleaseEndpoints();
+app.MapPatchEndpoints();
 
 // Subscription endpoints (mocked)
 app.MapPost("/api/subscription/validate", (ClaimsPrincipal user) =>

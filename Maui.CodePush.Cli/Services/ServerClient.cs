@@ -105,4 +105,87 @@ public class ServerClient
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<JsonElement>();
     }
+
+    // ── New Release/Patch API (v2) ──────────────────────────────
+
+    public async Task<JsonElement> CreateAppReleaseAsync(
+        string appId, string version, string platform, string channel,
+        List<(string moduleName, string dllPath)> modules,
+        string dependencySnapshotJson)
+    {
+        using var form = new MultipartFormDataContent();
+        form.Add(new StringContent(version), "version");
+        form.Add(new StringContent(platform), "platform");
+        form.Add(new StringContent(channel), "channel");
+        form.Add(new StringContent(dependencySnapshotJson), "dependencySnapshot");
+        form.Add(new StringContent(string.Join(",", modules.Select(m => m.moduleName))), "moduleNames");
+
+        foreach (var (moduleName, dllPath) in modules)
+        {
+            var fileBytes = await File.ReadAllBytesAsync(dllPath);
+            var content = new ByteArrayContent(fileBytes);
+            content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+            form.Add(content, "files", $"{moduleName}.dll");
+        }
+
+        var response = await _http.PostAsync($"api/apps/{appId}/releases/v2", form);
+        if (!response.IsSuccessStatusCode)
+        {
+            var err = await response.Content.ReadAsStringAsync();
+            throw new InvalidOperationException($"Create release failed ({response.StatusCode}): {err}");
+        }
+        return await response.Content.ReadFromJsonAsync<JsonElement>();
+    }
+
+    public async Task<JsonElement> GetAppReleaseAsync(string appId, string version, string platform, string channel = "production")
+    {
+        var response = await _http.GetAsync(
+            $"api/apps/{appId}/releases/v2?version={Uri.EscapeDataString(version)}&platform={Uri.EscapeDataString(platform)}&channel={Uri.EscapeDataString(channel)}");
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var err = await response.Content.ReadAsStringAsync();
+            throw new InvalidOperationException($"Get release failed ({response.StatusCode}): {err}");
+        }
+        return await response.Content.ReadFromJsonAsync<JsonElement>();
+    }
+
+    public async Task<JsonElement> ListAppReleasesAsync(string appId)
+    {
+        var response = await _http.GetAsync($"api/apps/{appId}/releases/v2");
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<JsonElement>();
+    }
+
+    public async Task<JsonElement> CreatePatchAsync(
+        string appId, string releaseId, string dllPath, string moduleName,
+        string channel = "production", bool isMandatory = false, int rolloutPercentage = 100)
+    {
+        using var form = new MultipartFormDataContent();
+
+        var fileBytes = await File.ReadAllBytesAsync(dllPath);
+        var content = new ByteArrayContent(fileBytes);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        form.Add(content, "file", Path.GetFileName(dllPath));
+
+        form.Add(new StringContent(moduleName), "moduleName");
+        form.Add(new StringContent(channel), "channel");
+        form.Add(new StringContent(isMandatory.ToString()), "isMandatory");
+        form.Add(new StringContent(rolloutPercentage.ToString()), "rolloutPercentage");
+
+        var response = await _http.PostAsync($"api/apps/{appId}/releases/{releaseId}/patches", form);
+        if (!response.IsSuccessStatusCode)
+        {
+            var err = await response.Content.ReadAsStringAsync();
+            throw new InvalidOperationException($"Create patch failed ({response.StatusCode}): {err}");
+        }
+        return await response.Content.ReadFromJsonAsync<JsonElement>();
+    }
+
+    public async Task<JsonElement> ListPatchesAsync(string appId, string releaseId)
+    {
+        var response = await _http.GetAsync($"api/apps/{appId}/releases/{releaseId}/patches");
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<JsonElement>();
+    }
 }

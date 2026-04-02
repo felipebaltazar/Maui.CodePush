@@ -11,6 +11,7 @@ rootCommand.Add(InitCommand.Create());
 rootCommand.Add(AppsCommand.Create());
 rootCommand.Add(DevicesCommand.Create());
 rootCommand.Add(ReleaseCommand.Create());
+rootCommand.Add(PatchCommand.Create());
 rootCommand.Add(RollbackCommand.Create());
 rootCommand.Add(UpdateCommand.Create());
 

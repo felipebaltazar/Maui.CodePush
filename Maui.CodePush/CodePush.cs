@@ -93,32 +93,34 @@ public static class CodePush
 
         try
         {
-            foreach (var assemblyName in Register.Assemblies)
+            var result = await _updateClient.CheckForUpdatesAsync(cancellationToken);
+
+            if (result?.UpdateAvailable == true)
             {
-                var moduleName = Path.GetFileNameWithoutExtension(assemblyName);
-                var currentInfo = _moduleManager.GetModuleInfo(moduleName);
-                var currentVersion = currentInfo?.Version ?? "0.0.0";
+                // Use patches (new model) or modules (legacy)
+                var updates = result.Patches.Count > 0 ? result.Patches : result.Modules;
 
-                if (!string.IsNullOrEmpty(_options.ServerUrl))
+                foreach (var patch in updates)
                 {
-                    var result = await _updateClient.CheckForUpdatesAsync(moduleName, currentVersion, cancellationToken);
+                    var dllName = $"{patch.Name}.dll";
+                    if (!Register.Assemblies.Any(n => n == dllName))
+                        continue;
 
-                    if (result?.UpdateAvailable == true)
+                    // Skip if already on this version (compare hash)
+                    var currentInfo = _moduleManager.GetModuleInfo(patch.Name);
+                    if (currentInfo?.Hash == patch.Hash)
+                        continue;
+
+                    var downloadedPath = await _updateClient.DownloadModuleAsync(patch, cancellationToken);
+                    if (downloadedPath != null)
                     {
-                        foreach (var module in result.Modules)
-                        {
-                            var downloadedPath = await _updateClient.DownloadModuleAsync(module, cancellationToken);
-                            if (downloadedPath != null)
-                            {
-                                _moduleManager.MarkUpdated(module.Name, module.Version, downloadedPath);
-                                Debug.WriteLine($"[CodePush] Update downloaded for {module.Name} v{module.Version}");
-                            }
-                        }
+                        _moduleManager.MarkUpdated(patch.Name, patch.Version, downloadedPath);
+                        Debug.WriteLine($"[CodePush] Patch downloaded for {patch.Name} v{patch.Version}");
                     }
                 }
-
-                _moduleManager.UpdateLastChecked();
             }
+
+            _moduleManager.UpdateLastChecked();
         }
         catch (Exception ex)
         {

@@ -19,6 +19,12 @@ public class ModuleInfo
     [JsonPropertyName("previousHash")]
     public string? PreviousHash { get; set; }
 
+    [JsonPropertyName("patchNumber")]
+    public int PatchNumber { get; set; }
+
+    [JsonPropertyName("releaseVersion")]
+    public string ReleaseVersion { get; set; } = string.Empty;
+
     [JsonPropertyName("status")]
     public ModuleStatus Status { get; set; } = ModuleStatus.Embedded;
 }

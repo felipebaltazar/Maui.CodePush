@@ -117,6 +117,8 @@ public static class AppEndpoints
         if (Directory.Exists(appUploadsDir))
             Directory.Delete(appUploadsDir, recursive: true);
 
+        await db.AppReleases.DeleteManyAsync(r => r.AppId == appId);
+        await db.Patches.DeleteManyAsync(p => p.AppId == appId);
         await db.Releases.DeleteManyAsync(r => r.AppId == appId);
         await db.Apps.DeleteOneAsync(a => a.Id == appId);
 

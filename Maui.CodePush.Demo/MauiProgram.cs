@@ -12,6 +12,7 @@ public static class MauiProgram
             .UseCodePush(options =>
             {
                 options.AddModule("Maui.CodePush.Demo.Feature");
+                options.ReleaseVersion = "1.0.0";
 
                 // Server configuration — fill with values from `codepush apps list`
                 // options.ServerUrl = "https://your-codepush-server.com";

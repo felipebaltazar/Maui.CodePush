@@ -7,8 +7,15 @@ public class UpdateCheckResult
     [JsonPropertyName("updateAvailable")]
     public bool UpdateAvailable { get; set; }
 
+    [JsonPropertyName("releaseVersion")]
+    public string ReleaseVersion { get; set; } = string.Empty;
+
+    [JsonPropertyName("patches")]
+    public List<ModuleUpdateInfo> Patches { get; set; } = [];
+
+    // Legacy compat
     [JsonPropertyName("modules")]
-    public List<ModuleUpdateInfo> Modules { get; set; } = new();
+    public List<ModuleUpdateInfo> Modules { get; set; } = [];
 }
 
 public class ModuleUpdateInfo
@@ -18,6 +25,9 @@ public class ModuleUpdateInfo
 
     [JsonPropertyName("version")]
     public string Version { get; set; } = string.Empty;
+
+    [JsonPropertyName("patchNumber")]
+    public int PatchNumber { get; set; }
 
     [JsonPropertyName("downloadUrl")]
     public string DownloadUrl { get; set; } = string.Empty;

@@ -21,7 +21,13 @@ public class MongoDbContext
     public IMongoCollection<Account> Accounts => _database.GetCollection<Account>("accounts");
     public IMongoCollection<Subscription> Subscriptions => _database.GetCollection<Subscription>("subscriptions");
     public IMongoCollection<App> Apps => _database.GetCollection<App>("apps");
+
+    // Legacy — mantido para backward compatibility
     public IMongoCollection<Release> Releases => _database.GetCollection<Release>("releases");
+
+    // Novo modelo release/patch
+    public IMongoCollection<AppRelease> AppReleases => _database.GetCollection<AppRelease>("appReleases");
+    public IMongoCollection<Patch> Patches => _database.GetCollection<Patch>("patches");
 
     public async Task EnsureIndexesAsync()
     {
@@ -45,6 +51,7 @@ public class MongoDbContext
                 Builders<App>.IndexKeys.Ascending(a => a.AccountId))
         ]);
 
+        // Legacy releases
         await Releases.Indexes.CreateManyAsync([
             new CreateIndexModel<Release>(
                 Builders<Release>.IndexKeys.Ascending(r => r.AppId)),
@@ -55,6 +62,32 @@ public class MongoDbContext
                     .Ascending(r => r.Platform)
                     .Ascending(r => r.Channel)
                     .Descending(r => r.CreatedAt))
+        ]);
+
+        // App releases (store versions)
+        await AppReleases.Indexes.CreateManyAsync([
+            new CreateIndexModel<AppRelease>(
+                Builders<AppRelease>.IndexKeys.Ascending(r => r.AppId)),
+            new CreateIndexModel<AppRelease>(
+                Builders<AppRelease>.IndexKeys
+                    .Ascending(r => r.AppId)
+                    .Ascending(r => r.Version)
+                    .Ascending(r => r.Platform)
+                    .Ascending(r => r.Channel),
+                new CreateIndexOptions { Unique = true })
+        ]);
+
+        // Patches
+        await Patches.Indexes.CreateManyAsync([
+            new CreateIndexModel<Patch>(
+                Builders<Patch>.IndexKeys.Ascending(p => p.AppId)),
+            new CreateIndexModel<Patch>(
+                Builders<Patch>.IndexKeys.Ascending(p => p.ReleaseId)),
+            new CreateIndexModel<Patch>(
+                Builders<Patch>.IndexKeys
+                    .Ascending(p => p.ReleaseId)
+                    .Ascending(p => p.ModuleName)
+                    .Descending(p => p.PatchNumber))
         ]);
 
         await Subscriptions.Indexes.CreateOneAsync(

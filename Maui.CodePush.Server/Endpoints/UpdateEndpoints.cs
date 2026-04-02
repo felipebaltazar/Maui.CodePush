@@ -19,9 +19,10 @@ public static class UpdateEndpoints
         HttpRequest request,
         MongoDbContext db,
         string app,
-        string module,
-        string version,
         string platform,
+        string? releaseVersion = null,
+        string? module = null,
+        string? version = null,
         string? channel = "production")
     {
         var appToken = request.Headers["X-CodePush-Token"].ToString();
@@ -36,6 +37,16 @@ public static class UpdateEndpoints
             return Results.Unauthorized();
 
         channel ??= "production";
+
+        // New flow: releaseVersion present → AppRelease + Patches
+        if (!string.IsNullOrWhiteSpace(releaseVersion))
+        {
+            return await CheckForUpdateV2(request, db, appId, platform, releaseVersion, channel);
+        }
+
+        // Legacy flow: module + version → Release collection
+        if (string.IsNullOrWhiteSpace(module) || string.IsNullOrWhiteSpace(version))
+            return Results.BadRequest(new { error = "Either releaseVersion or both module and version are required." });
 
         var latestRelease = await db.Releases
             .Find(r => r.AppId == appId
@@ -74,6 +85,72 @@ public static class UpdateEndpoints
         });
     }
 
+    private static async Task<IResult> CheckForUpdateV2(
+        HttpRequest request,
+        MongoDbContext db,
+        Guid appId,
+        string platform,
+        string releaseVersion,
+        string channel)
+    {
+        var appRelease = await db.AppReleases
+            .Find(r => r.AppId == appId
+                && r.Version == releaseVersion
+                && r.Platform == platform
+                && r.Channel == channel)
+            .FirstOrDefaultAsync();
+
+        if (appRelease is null)
+        {
+            return Results.Ok(new
+            {
+                updateAvailable = false,
+                patches = Array.Empty<object>()
+            });
+        }
+
+        // Find all active patches for this release
+        var activePatches = await db.Patches
+            .Find(p => p.ReleaseId == appRelease.Id && p.IsActive)
+            .SortByDescending(p => p.PatchNumber)
+            .ToListAsync();
+
+        // Group by moduleName, take latest per module
+        var latestPerModule = activePatches
+            .GroupBy(p => p.ModuleName)
+            .Select(g => g.First())
+            .ToList();
+
+        if (latestPerModule.Count == 0)
+        {
+            return Results.Ok(new
+            {
+                updateAvailable = false,
+                patches = Array.Empty<object>()
+            });
+        }
+
+        var baseUrl = $"{request.Scheme}://{request.Host}";
+
+        var patches = latestPerModule.Select(p => new
+        {
+            name = p.ModuleName,
+            patchNumber = p.PatchNumber,
+            version = p.Version,
+            downloadUrl = $"{baseUrl}/api/updates/download/{p.Id}",
+            hash = p.DllHash,
+            size = p.DllSize,
+            isMandatory = p.IsMandatory
+        }).ToList();
+
+        return Results.Ok(new
+        {
+            updateAvailable = true,
+            releaseVersion = appRelease.Version,
+            patches
+        });
+    }
+
     private static async Task<IResult> DownloadRelease(
         Guid releaseId,
         HttpRequest request,
@@ -84,6 +161,25 @@ public static class UpdateEndpoints
         if (string.IsNullOrWhiteSpace(appToken))
             return Results.Unauthorized();
 
+        var uploadsPath = configuration["Uploads:Path"] ?? "uploads";
+
+        // Try Patches collection first (new model)
+        var patch = await db.Patches.Find(p => p.Id == releaseId).FirstOrDefaultAsync();
+        if (patch is not null)
+        {
+            var patchApp = await db.Apps.Find(a => a.Id == patch.AppId && a.AppToken == appToken).FirstOrDefaultAsync();
+            if (patchApp is null)
+                return Results.Unauthorized();
+
+            var patchFilePath = Path.Combine(uploadsPath, patch.AppId.ToString(), "patches", $"{releaseId}.dll");
+            if (!File.Exists(patchFilePath))
+                return Results.NotFound(new { error = "Patch file not found on disk." });
+
+            var patchBytes = await File.ReadAllBytesAsync(patchFilePath);
+            return Results.File(patchBytes, "application/octet-stream", patch.FileName);
+        }
+
+        // Fallback to legacy Releases collection
         var release = await db.Releases.Find(r => r.Id == releaseId).FirstOrDefaultAsync();
         if (release is null)
             return Results.NotFound();
@@ -92,7 +188,6 @@ public static class UpdateEndpoints
         if (appEntity is null)
             return Results.Unauthorized();
 
-        var uploadsPath = configuration["Uploads:Path"] ?? "uploads";
         var filePath = Path.Combine(uploadsPath, release.AppId.ToString(), $"{releaseId}.dll");
 
         if (!File.Exists(filePath))

@@ -21,10 +21,7 @@ public class UpdateClient
             _httpClient.DefaultRequestHeaders.Add("X-CodePush-Token", options.AppToken);
     }
 
-    public async Task<UpdateCheckResult?> CheckForUpdatesAsync(
-        string moduleName,
-        string currentVersion,
-        CancellationToken cancellationToken = default)
+    public async Task<UpdateCheckResult?> CheckForUpdatesAsync(CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(_options.ServerUrl) || string.IsNullOrEmpty(_options.AppId))
             return null;
@@ -32,9 +29,10 @@ public class UpdateClient
         try
         {
             var platform = GetPlatform();
+            var releaseVersion = _options.ReleaseVersion ?? "0.0.0";
+
             var url = $"api/updates/check?app={Uri.EscapeDataString(_options.AppId)}" +
-                      $"&module={Uri.EscapeDataString(moduleName)}" +
-                      $"&version={Uri.EscapeDataString(currentVersion)}" +
+                      $"&releaseVersion={Uri.EscapeDataString(releaseVersion)}" +
                       $"&platform={Uri.EscapeDataString(platform)}" +
                       $"&channel={Uri.EscapeDataString(_options.Channel)}";
 

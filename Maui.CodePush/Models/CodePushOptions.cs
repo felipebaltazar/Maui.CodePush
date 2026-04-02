@@ -8,6 +8,8 @@ public class CodePushOptions
 
     public string? AppToken { get; set; }
 
+    public string? ReleaseVersion { get; set; }
+
     public string Channel { get; set; } = "production";
 
     public bool CheckOnStartup { get; set; } = true;

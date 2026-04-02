@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Text.Json;
 using Maui.CodePush.Cli.Models;
 using Maui.CodePush.Cli.Services;
 
@@ -21,12 +22,16 @@ public static class ReleaseCommand
         var channelOption = new Option<string>("--channel") { Description = "Release channel", DefaultValueFactory = _ => "production" };
         var localOption = new Option<bool>("--local") { Description = "Force deploy via adb instead of server" };
 
-        var command = new Command("release", "Build and deploy module updates (via server or adb)")
+        var command = new Command("release", "Manage releases and deploy module updates")
         {
             pathsArgument, deviceOption, packageNameOption, platformOption,
             outputOption, noBuildOption, configOption, restartOption,
             versionOption, channelOption, localOption
         };
+
+        // Subcommands
+        command.Add(CreateCreateSubcommand());
+        command.Add(CreateListSubcommand());
 
         command.SetAction(async (parseResult, _) =>
         {
@@ -217,5 +222,202 @@ public static class ReleaseCommand
         }
 
         return result;
+    }
+
+    // ── Subcommand: release create ──────────────────────────────
+
+    private static Command CreateCreateSubcommand()
+    {
+        var pathsArg = new Argument<string[]>("paths") { Arity = ArgumentArity.ZeroOrMore, Description = "Module project (.csproj) or DLL paths" };
+        var versionOpt = new Option<string>("--version", "-v") { Description = "Release version for app store", Required = true };
+        var platformOpt = new Option<string?>("--platform") { Description = "Target platform" };
+        var channelOpt = new Option<string>("--channel") { Description = "Release channel", DefaultValueFactory = _ => "production" };
+        var configOpt = new Option<string>("--configuration", "-c") { Description = "Build configuration", DefaultValueFactory = _ => "Release" };
+        var noGitTagOpt = new Option<bool>("--no-git-tag") { Description = "Skip git tag" };
+        var appProjectOpt = new Option<string?>("--app-project") { Description = "App .csproj path (for dotnet publish)" };
+
+        var cmd = new Command("create", "Create a new release (app store version) with dependency snapshot")
+        {
+            pathsArg, versionOpt, platformOpt, channelOpt, configOpt, noGitTagOpt, appProjectOpt
+        };
+
+        cmd.SetAction(async (parseResult, _) =>
+        {
+            try
+            {
+                var paths = parseResult.GetValue(pathsArg) ?? [];
+                var version = parseResult.GetValue(versionOpt)!;
+                var platform = parseResult.GetValue(platformOpt);
+                var channel = parseResult.GetValue(channelOpt)!;
+                var configuration = parseResult.GetValue(configOpt)!;
+                var noGitTag = parseResult.GetValue(noGitTagOpt);
+                var appProject = parseResult.GetValue(appProjectOpt);
+
+                var configManager = new ConfigManager();
+                var loaded = configManager.TryLoadConfig();
+                var config = loaded?.Config;
+                var projectDir = loaded?.ProjectDir ?? Directory.GetCurrentDirectory();
+
+                var serverUrl = config?.ServerUrl ?? CliSettings.DefaultServerUrl;
+                if (string.IsNullOrEmpty(serverUrl) || string.IsNullOrEmpty(config?.AppId))
+                {
+                    ConsoleUI.Error("Not configured. Run 'codepush login' and 'codepush apps add --set-default' first.");
+                    return;
+                }
+
+                platform ??= config?.Platform ?? "android";
+
+                var client = new ServerClient(serverUrl, token: config.Token, apiKey: config.ApiKey);
+                var projBuilder = new ProjectBuilder();
+                var analyzer = new DependencyAnalyzer();
+
+                // Optionally build the full app via dotnet publish
+                if (!string.IsNullOrEmpty(appProject))
+                {
+                    var tfm = platform == "ios" ? "net9.0-ios" : "net9.0-android";
+                    await ConsoleUI.SpinnerAsync($"Publishing app ({platform}, {configuration})", async () =>
+                    {
+                        var startInfo = new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = "dotnet",
+                            Arguments = $"publish \"{appProject}\" -f {tfm} -c {configuration}",
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true,
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        };
+                        using var proc = System.Diagnostics.Process.Start(startInfo)!;
+                        await proc.WaitForExitAsync();
+                        if (proc.ExitCode != 0)
+                        {
+                            var err = await proc.StandardError.ReadToEndAsync();
+                            throw new InvalidOperationException($"Publish failed:\n{err}");
+                        }
+                    });
+                }
+
+                // Resolve and build modules
+                var modulePaths = ResolveModulePaths(paths, config, projectDir);
+                if (modulePaths.Count == 0)
+                {
+                    ConsoleUI.Error("No modules specified.");
+                    return;
+                }
+
+                var modules = new List<(string Name, string DllPath)>();
+                var snapshots = new List<ModuleDependencySnapshotDto>();
+
+                foreach (var (name, path) in modulePaths)
+                {
+                    string dllPath;
+                    if (path.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+                    {
+                        dllPath = await ConsoleUI.SpinnerAsync($"Building {name}",
+                            () => projBuilder.BuildModuleAsync(path, platform, configuration));
+                    }
+                    else
+                    {
+                        dllPath = System.IO.Path.GetFullPath(path);
+                    }
+
+                    var snapshot = await ConsoleUI.SpinnerAsync($"Analyzing {name} dependencies",
+                        () => Task.FromResult(analyzer.CreateSnapshot(name, dllPath)));
+
+                    ConsoleUI.Detail($"  {name}", $"{snapshot.AssemblyReferences.Count} refs, {snapshot.DllSize} bytes");
+                    modules.Add((name, dllPath));
+                    snapshots.Add(snapshot);
+                }
+
+                // Upload to server
+                var snapshotJson = JsonSerializer.Serialize(snapshots);
+
+                ConsoleUI.Separator();
+
+                var result = await ConsoleUI.SpinnerAsync($"Creating release v{version}",
+                    () => client.CreateAppReleaseAsync(config.AppId, version, platform, channel, modules, snapshotJson));
+
+                var releaseId = result.GetProperty("releaseId").GetString();
+                var gitTag = result.GetProperty("gitTag").GetString();
+
+                ConsoleUI.Blank();
+                ConsoleUI.Success($"Release v{version} created!");
+                ConsoleUI.Detail("Release ID", releaseId ?? "");
+                ConsoleUI.Detail("Platform", platform);
+                ConsoleUI.Detail("Channel", channel);
+                ConsoleUI.Detail("Modules", modules.Count.ToString());
+
+                // Git tag
+                if (!noGitTag && !string.IsNullOrEmpty(gitTag))
+                {
+                    var git = new GitService();
+                    if (await git.IsGitRepoAsync())
+                    {
+                        var tagged = await git.CreateAndPushTagAsync(gitTag, $"CodePush release v{version}");
+                        if (tagged)
+                            ConsoleUI.Detail("Git tag", gitTag);
+                    }
+                }
+
+                ConsoleUI.Blank();
+                ConsoleUI.Info("Submit the built APK/IPA to the app store.");
+                ConsoleUI.Info($"Then push patches with: codepush patch --release {version}");
+                ConsoleUI.Blank();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                ConsoleUI.Error(ex.Message);
+            }
+        });
+
+        return cmd;
+    }
+
+    // ── Subcommand: release list ────────────────────────────────
+
+    private static Command CreateListSubcommand()
+    {
+        var cmd = new Command("list", "List releases for the current app");
+
+        cmd.SetAction(async (_, _) =>
+        {
+            try
+            {
+                var configManager = new ConfigManager();
+                var loaded = configManager.TryLoadConfig();
+                var config = loaded?.Config;
+
+                var serverUrl = config?.ServerUrl ?? CliSettings.DefaultServerUrl;
+                if (string.IsNullOrEmpty(serverUrl) || string.IsNullOrEmpty(config?.AppId))
+                {
+                    ConsoleUI.Error("Not configured. Run 'codepush login' first.");
+                    return;
+                }
+
+                var client = new ServerClient(serverUrl, token: config.Token, apiKey: config.ApiKey);
+
+                var releases = await ConsoleUI.SpinnerAsync("Fetching releases",
+                    () => client.ListAppReleasesAsync(config.AppId));
+
+                var rows = new List<string[]>();
+                foreach (var r in releases.EnumerateArray())
+                {
+                    rows.Add([
+                        r.GetProperty("version").GetString() ?? "",
+                        r.GetProperty("platform").GetString() ?? "",
+                        r.GetProperty("channel").GetString() ?? "",
+                        r.GetProperty("moduleCount").GetInt32().ToString(),
+                        r.GetProperty("createdAt").GetString()?[..10] ?? ""
+                    ]);
+                }
+
+                ConsoleUI.PrintTable(["Version", "Platform", "Channel", "Modules", "Created"], rows);
+            }
+            catch (Exception ex)
+            {
+                ConsoleUI.Error(ex.Message);
+            }
+        });
+
+        return cmd;
     }
 }
