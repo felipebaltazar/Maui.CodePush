@@ -65,3 +65,27 @@ Sessao de planejamento e implementacao com AI assistant (Claude):
 
 ### Resultado
 Mecanismo de code push **validado end-to-end** no Android fisico. iOS pendente de validacao em device.
+
+## CLI Tool (2026-04-01, mesma sessao)
+
+### Implementacao
+Criado `Maui.CodePush.Cli/` como .NET global tool (`dotnet-codepush`) com 4 comandos:
+- `codepush init` — Auto-detecta `ApplicationId` e `<CodePushModule>` do csproj, cria `.codepush.json`
+- `codepush devices` — Lista devices Android conectados (wrapper de `adb devices -l`)
+- `codepush release [paths] --restart` — Builda modulo + deploya no device via adb + reinicia
+- `codepush rollback [--all] --restart` — Remove DLLs de updates, reverte para embedded
+
+### Decisoes Tecnicas
+- **System.CommandLine 2.0.5**: API estavel. `SetAction(Func<ParseResult, CancellationToken, Task>)`, `Command.Add()`, `ParseResult.GetValue()`. NAO usar `SetHandler/AddCommand/InvokeAsync` (API das betas).
+- **AdbService**: Descobre adb automaticamente (PATH > well-known locations > ANDROID_HOME). Seta `MSYS_NO_PATHCONV=1` para evitar path mangling no Git Bash Windows. Deploy usa dois passos: `adb push` para `/data/local/tmp/` + `run-as cp` para `cache/Modules/`.
+- **ConfigManager**: `.codepush.json` com `packageName`, `platform`, `modules[]`. Auto-detect busca csproj com `OutputType=Exe` e extrai `ApplicationId` e `CodePushModule`.
+- **ProjectBuilder**: Infere assembly name de `<AssemblyName>` > `<RootNamespace>` > filename. Builda com `dotnet build -f net9.0-android -c Release`.
+
+### Validacao
+Testado end-to-end no Samsung fisico (RX8N90FT1LV):
+```
+codepush devices        -> listou device corretamente
+codepush init --force   -> detectou package name e modulos do demo
+codepush release Feature.csproj --restart  -> buildou, deployou, reiniciou
+codepush rollback --all --restart          -> limpou tudo, reiniciou
+```

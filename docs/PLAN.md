@@ -78,12 +78,22 @@ _ResolveAssemblies -> _PrepareAssemblies -> _CollectAssembliesToCompress
 ### Pendente
 - [ ] Validacao em device iOS fisico (MtouchInterpreter + Assembly.Load)
 - [ ] Teste end-to-end com servidor HTTP simples (nao adb push)
-- [ ] Teste de rollback em device
+- [x] Teste de rollback em device (via CLI `codepush rollback --all --restart`)
 - [ ] Publicacao do NuGet package (preview)
 
 ---
 
 ## Fase 2 — Servidor + CLI
+
+### CLI Tool (Status: MVP Completo)
+Implementado `Maui.CodePush.Cli/` com 4 comandos: `init`, `devices`, `release`, `rollback`.
+Validado end-to-end em device fisico. Detalhes em `Maui.CodePush.Cli/CLAUDE.md`.
+
+- [x] `codepush init` com auto-detect de csproj
+- [x] `codepush devices` com descoberta automatica do adb
+- [x] `codepush release` com build + deploy via adb
+- [x] `codepush rollback` com limpeza de modules no device
+- [ ] `codepush release --server` upload para servidor HTTP (requer backend)
 
 ### Backend API (ASP.NET Core Minimal API + EF Core + PostgreSQL)
 Endpoints:

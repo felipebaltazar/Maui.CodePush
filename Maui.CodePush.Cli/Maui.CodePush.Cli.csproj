@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net9.0</TargetFramework>
+		<RootNamespace>Maui.CodePush.Cli</RootNamespace>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<PackAsTool>true</PackAsTool>
+		<ToolCommandName>codepush</ToolCommandName>
+		<PackageId>dotnet-codepush</PackageId>
+		<Version>0.1.0-pre</Version>
+		<Description>CLI tool for Maui.CodePush — deploy OTA updates to .NET MAUI apps</Description>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="System.CommandLine" Version="2.0.5" />
+	</ItemGroup>
+
+</Project>

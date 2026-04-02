@@ -58,16 +58,23 @@ Se uma tarefa cria/modifica/remove arquivos sem atualizar a documentacao corresp
 3. `ModuleManager` verifica hash SHA-256 e atualiza o manifesto
 4. No proximo cold start, `ResolveAssembly` detecta a DLL no temp e aplica
 
-### Simulacao de Update (sem servidor)
+### Deploy via CLI
 ```bash
-# 1. Buildar a nova DLL do modulo
-dotnet build Feature/Feature.csproj -f net9.0-android
+# Build + deploy + restart em um comando
+codepush release MeuApp.Feature/MeuApp.Feature.csproj --restart
 
-# 2. Pushear para o device via adb
+# Ou deploy de DLL pre-buildada
+codepush release MeuApp.Feature.dll --no-build --restart
+
+# Rollback para versao embeddada
+codepush rollback --all --restart
+```
+
+### Deploy Manual (sem CLI)
+```bash
+dotnet build Feature/Feature.csproj -f net9.0-android
 adb push Feature.dll /data/local/tmp/Feature.dll
 adb shell "run-as com.meuapp cp /data/local/tmp/Feature.dll /data/user/0/com.meuapp/cache/Modules/Feature.dll"
-
-# 3. Reiniciar o app - CodePush aplica o update automaticamente
 ```
 
 ## Diretorios no Device
@@ -124,6 +131,21 @@ Maui.CodePush.Demo.Feature/            # Modulo carregado dinamicamente
   Maui.CodePush.Demo.Feature.csproj    # Class library net9.0-android;net9.0-ios
   MainPage.xaml                         # UI do modulo (substituivel via code push)
   MainPage.xaml.cs                      # Code-behind do modulo
+
+Maui.CodePush.Cli/                      # CLI tool (dotnet global tool)
+  Maui.CodePush.Cli.csproj             # net9.0, PackAsTool, System.CommandLine 2.0.5
+  Program.cs                            # Entry point com 4 subcommands
+  Commands/
+    InitCommand.cs                      # Cria .codepush.json com auto-detect
+    DevicesCommand.cs                   # Lista devices via adb
+    ReleaseCommand.cs                   # Build + deploy no device
+    RollbackCommand.cs                  # Remove updates do device
+  Services/
+    AdbService.cs                       # Encontra adb, push/remove files, restart app
+    ProjectBuilder.cs                   # Wrapper de dotnet build
+    ConfigManager.cs                    # Leitura/escrita de .codepush.json
+  Models/
+    CodePushConfig.cs                   # Modelo do .codepush.json
 ```
 
 ## Arquivos Detalhados
