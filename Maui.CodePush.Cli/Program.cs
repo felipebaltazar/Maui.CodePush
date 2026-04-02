@@ -12,6 +12,7 @@ rootCommand.Add(AppsCommand.Create());
 rootCommand.Add(DevicesCommand.Create());
 rootCommand.Add(ReleaseCommand.Create());
 rootCommand.Add(RollbackCommand.Create());
+rootCommand.Add(UpdateCommand.Create());
 
 var parseResult = rootCommand.Parse(args);
 return await parseResult.InvokeAsync(parseResult.InvocationConfiguration);
