@@ -1,7 +1,6 @@
 using System.CommandLine;
 using Maui.CodePush.Cli.Models;
 using Maui.CodePush.Cli.Services;
-using static Maui.CodePush.Cli.Commands.InitCommand;
 
 namespace Maui.CodePush.Cli.Commands;
 
@@ -48,7 +47,7 @@ public static class ReleaseCommand
             }
             catch (Exception ex) when (ex is FileNotFoundException or AdbException or InvalidOperationException or ArgumentException)
             {
-                WriteError(ex.Message);
+                ConsoleUI.Error(ex.Message);
             }
         });
 
@@ -72,7 +71,7 @@ public static class ReleaseCommand
         var modulePaths = ResolveModulePaths(paths, config, projectDir);
         if (modulePaths.Count == 0)
         {
-            WriteError("No modules specified. Pass project/DLL paths or configure modules in .codepush.json");
+            ConsoleUI.Error("No modules specified. Pass project/DLL paths or configure in .codepush.json");
             return;
         }
 
@@ -82,9 +81,8 @@ public static class ReleaseCommand
         {
             if (path.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) && !noBuild)
             {
-                WriteInfo($"Building {name} ({platform}, {configuration})...");
-                var dllPath = await builder.BuildModuleAsync(path, platform, configuration);
-                WriteSuccess($"Built {name} -> {Path.GetFileName(dllPath)}");
+                var dllPath = await ConsoleUI.SpinnerAsync($"Building {name} ({platform}, {configuration})",
+                    async () => await builder.BuildModuleAsync(path, platform, configuration));
                 deployments.Add((name, dllPath));
             }
             else
@@ -92,6 +90,7 @@ public static class ReleaseCommand
                 var resolved = Path.GetFullPath(path);
                 if (!File.Exists(resolved))
                     throw new FileNotFoundException($"File not found: {resolved}");
+                ConsoleUI.Success($"Using {Path.GetFileName(resolved)}");
                 deployments.Add((name, resolved));
             }
         }
@@ -104,7 +103,7 @@ public static class ReleaseCommand
             {
                 var dest = Path.Combine(output, $"{name}.dll");
                 File.Copy(dllPath, dest, true);
-                WriteSuccess($"Copied {name} -> {dest}");
+                ConsoleUI.Success($"Copied {name} -> {dest}");
             }
             return;
         }
@@ -125,24 +124,29 @@ public static class ReleaseCommand
     {
         var client = new ServerClient(serverUrl, token: config.Token, apiKey: config.ApiKey);
 
-        WriteInfo($"Uploading to server...");
+        ConsoleUI.Separator();
+        ConsoleUI.Info($"Releasing to server ({channel})");
+        ConsoleUI.Blank();
 
         foreach (var (name, dllPath) in deployments)
         {
-            var result = await client.UploadReleaseAsync(config.AppId!, dllPath, name, version, platform, channel);
+            var result = await ConsoleUI.SpinnerAsync($"Uploading {name} v{version}",
+                async () => await client.UploadReleaseAsync(config.AppId!, dllPath, name, version, platform, channel));
 
             var releaseId = result.GetProperty("releaseId").GetString();
             var hash = result.GetProperty("dllHash").GetString();
             var size = result.GetProperty("dllSize").GetInt64();
 
-            WriteSuccess($"Released {name} v{version} ({size} bytes, hash: {hash?[..12]}...)");
-            Console.WriteLine($"  Release ID: {releaseId}");
-            Console.WriteLine($"  Channel:    {channel}");
-            Console.WriteLine($"  Platform:   {platform}");
+            ConsoleUI.Detail("Release ID", releaseId ?? "");
+            ConsoleUI.Detail("Hash", hash ?? "");
+            ConsoleUI.Detail("Size", $"{size:N0} bytes");
+            ConsoleUI.Detail("Channel", channel);
+            ConsoleUI.Detail("Platform", platform);
         }
 
-        Console.WriteLine();
-        WriteSuccess("Release published. Apps will receive the update on next check.");
+        ConsoleUI.Blank();
+        ConsoleUI.Success("Release published! Apps will receive the update on next check.");
+        ConsoleUI.Blank();
     }
 
     private static async Task DeployViaAdb(
@@ -150,32 +154,38 @@ public static class ReleaseCommand
         CodePushConfig? config, string? packageName, string? device, bool restart)
     {
         if (string.IsNullOrEmpty(packageName))
-            throw new InvalidOperationException("Package name required for adb deploy. Use --package-name or configure in .codepush.json");
+            throw new InvalidOperationException("Package name required for adb deploy. Use --package-name or .codepush.json");
 
         var adb = new AdbService();
         adb.FindAdb(config?.AdbPath);
         var deviceSerial = await adb.ResolveDeviceAsync(device);
 
-        WriteInfo($"Deploying to {deviceSerial} via adb...");
+        ConsoleUI.Separator();
+        ConsoleUI.Info($"Deploying via adb to {deviceSerial}");
+        ConsoleUI.Blank();
 
         foreach (var (name, dllPath) in deployments)
         {
-            await adb.DeployModuleAsync(deviceSerial, packageName, dllPath, name);
-            WriteSuccess($"Deployed {name} to {deviceSerial}");
+            await ConsoleUI.SpinnerAsync($"Deploying {name}",
+                async () => await adb.DeployModuleAsync(deviceSerial, packageName, dllPath, name));
         }
 
         if (restart)
         {
-            WriteInfo("Restarting app...");
-            await adb.ForceStopAppAsync(deviceSerial, packageName);
-            await Task.Delay(1000);
-            await adb.StartAppAsync(deviceSerial, packageName);
-            WriteSuccess("App restarted.");
+            await ConsoleUI.SpinnerAsync("Restarting app", async () =>
+            {
+                await adb.ForceStopAppAsync(deviceSerial, packageName);
+                await Task.Delay(1000);
+                await adb.StartAppAsync(deviceSerial, packageName);
+            });
         }
         else
         {
-            WriteInfo("Restart the app to apply the update.");
+            ConsoleUI.Blank();
+            ConsoleUI.Info("Restart the app to apply the update.");
         }
+
+        ConsoleUI.Blank();
     }
 
     private static List<(string Name, string Path)> ResolveModulePaths(

@@ -1,7 +1,6 @@
 using System.CommandLine;
 using System.Text.Json;
 using Maui.CodePush.Cli.Services;
-using static Maui.CodePush.Cli.Commands.InitCommand;
 
 namespace Maui.CodePush.Cli.Commands;
 
@@ -10,10 +9,8 @@ public static class AppsCommand
     public static Command Create()
     {
         var command = new Command("apps", "Manage apps on the CodePush server");
-
         command.Add(CreateListCommand());
         command.Add(CreateAddCommand());
-
         return command;
     }
 
@@ -26,22 +23,25 @@ public static class AppsCommand
             try
             {
                 var (client, _) = GetAuthenticatedClient();
-                var apps = await client.ListAppsAsync();
 
-                Console.WriteLine();
-                Console.WriteLine($"  {"App ID",-38} {"Package Name",-45} {"Display Name"}");
-                Console.WriteLine($"  {"------",-38} {"------------",-45} {"------------"}");
+                var apps = await ConsoleUI.SpinnerAsync("Fetching apps",
+                    async () => await client.ListAppsAsync());
 
+                var rows = new List<string[]>();
                 foreach (var app in apps.EnumerateArray())
                 {
-                    Console.WriteLine($"  {app.GetProperty("appId").GetString(),-38} {app.GetProperty("packageName").GetString(),-45} {app.GetProperty("displayName").GetString()}");
+                    rows.Add([
+                        app.GetProperty("appId").GetString() ?? "",
+                        app.GetProperty("packageName").GetString() ?? "",
+                        app.GetProperty("displayName").GetString() ?? ""
+                    ]);
                 }
 
-                Console.WriteLine();
+                ConsoleUI.PrintTable(["App ID", "Package Name", "Display Name"], rows);
             }
             catch (Exception ex)
             {
-                WriteError(ex.Message);
+                ConsoleUI.Error(ex.Message);
             }
         });
 
@@ -54,12 +54,7 @@ public static class AppsCommand
         var nameOption = new Option<string>("--name", "-n") { Description = "Display name", Required = true };
         var setDefaultOption = new Option<bool>("--set-default") { Description = "Save as default appId in .codepush.json" };
 
-        var command = new Command("add", "Register a new app")
-        {
-            packageOption,
-            nameOption,
-            setDefaultOption
-        };
+        var command = new Command("add", "Register a new app") { packageOption, nameOption, setDefaultOption };
 
         command.SetAction(async (parseResult, _) =>
         {
@@ -71,18 +66,19 @@ public static class AppsCommand
             {
                 var (client, configManager) = GetAuthenticatedClient();
 
-                WriteInfo($"Creating app {packageName}...");
-                var result = await client.CreateAppAsync(packageName, displayName);
+                var result = await ConsoleUI.SpinnerAsync($"Creating app {packageName}",
+                    async () => await client.CreateAppAsync(packageName, displayName));
 
                 var appId = result.GetProperty("appId").GetString()!;
                 var appToken = result.GetProperty("appToken").GetString()!;
 
-                WriteSuccess("App created!");
-                Console.WriteLine($"  App ID:    {appId}");
-                Console.WriteLine($"  Package:   {packageName}");
-                Console.WriteLine($"  AppToken:  {appToken[..16]}...");
-                Console.WriteLine();
-                WriteInfo("Save the AppToken — your mobile app needs it for update checks.");
+                ConsoleUI.Blank();
+                ConsoleUI.Success("App created!");
+                ConsoleUI.Detail("App ID", appId);
+                ConsoleUI.Detail("Package", packageName);
+                ConsoleUI.Detail("AppToken", $"{appToken[..16]}...");
+                ConsoleUI.Blank();
+                ConsoleUI.Info("Save the AppToken — your mobile app needs it for update checks.");
 
                 if (setDefault)
                 {
@@ -94,12 +90,14 @@ public static class AppsCommand
                     config.PackageName = packageName;
                     configManager.CreateConfig(dir, config);
 
-                    WriteSuccess("Saved as default app in .codepush.json");
+                    ConsoleUI.Success("Saved as default app in .codepush.json");
                 }
+
+                ConsoleUI.Blank();
             }
             catch (Exception ex)
             {
-                WriteError(ex.Message);
+                ConsoleUI.Error(ex.Message);
             }
         });
 

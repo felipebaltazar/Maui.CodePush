@@ -30,11 +30,11 @@ public static class InitCommand
 
             if (File.Exists(configPath) && !force)
             {
-                WriteError($"{ConfigManager.ConfigFileName} already exists. Use --force to overwrite.");
+                ConsoleUI.Error($"{ConfigManager.ConfigFileName} already exists. Use --force to overwrite.");
                 return Task.CompletedTask;
             }
 
-            WriteInfo("Scanning project files...");
+            ConsoleUI.Info("Scanning project files...");
             var config = configManager.AutoDetectFromProject(dir);
 
             if (!string.IsNullOrEmpty(packageName))
@@ -43,54 +43,33 @@ public static class InitCommand
             config.Platform = platform;
             configManager.CreateConfig(dir, config);
 
-            WriteSuccess($"Created {ConfigManager.ConfigFileName}");
-            Console.WriteLine();
+            ConsoleUI.Success($"Created {ConfigManager.ConfigFileName}");
+            ConsoleUI.Blank();
 
             if (!string.IsNullOrEmpty(config.PackageName))
-                Console.WriteLine($"  Package: {config.PackageName}");
+                ConsoleUI.Detail("Package", config.PackageName);
 
-            Console.WriteLine($"  Platform: {config.Platform}");
-            Console.WriteLine($"  Modules:  {config.Modules.Count}");
+            ConsoleUI.Detail("Platform", config.Platform);
+            ConsoleUI.Detail("Modules", config.Modules.Count.ToString());
 
             foreach (var module in config.Modules)
             {
-                Console.WriteLine($"    - {module.Name}");
+                ConsoleUI.Detail("  Module", module.Name);
                 if (module.ProjectPath != null)
-                    Console.WriteLine($"      Project: {module.ProjectPath}");
+                    ConsoleUI.Detail("  Project", module.ProjectPath);
             }
 
+            ConsoleUI.Blank();
+
             if (string.IsNullOrEmpty(config.PackageName))
-                WriteWarning("Package name not detected. Set it with: codepush init --package-name com.yourapp");
+                ConsoleUI.Warning("Package name not detected. Use: codepush init --package-name com.yourapp");
 
             if (config.Modules.Count == 0)
-                WriteWarning("No CodePushModule items found. Add <CodePushModule Include=\"...\"/> to your app csproj.");
+                ConsoleUI.Warning("No CodePushModule items found. Add <CodePushModule Include=\"...\"/> to your csproj.");
 
             return Task.CompletedTask;
         });
 
         return command;
-    }
-
-    internal static void WriteInfo(string msg) => Console.WriteLine($"[CodePush] {msg}");
-
-    internal static void WriteSuccess(string msg)
-    {
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"[CodePush] {msg}");
-        Console.ResetColor();
-    }
-
-    internal static void WriteWarning(string msg)
-    {
-        Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine($"[CodePush] Warning: {msg}");
-        Console.ResetColor();
-    }
-
-    internal static void WriteError(string msg)
-    {
-        Console.ForegroundColor = ConsoleColor.Red;
-        Console.Error.WriteLine($"[CodePush] Error: {msg}");
-        Console.ResetColor();
     }
 }

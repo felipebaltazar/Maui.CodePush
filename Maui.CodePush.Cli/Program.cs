@@ -1,5 +1,8 @@
 using System.CommandLine;
 using Maui.CodePush.Cli.Commands;
+using Maui.CodePush.Cli.Services;
+
+ConsoleUI.PrintBanner();
 
 var rootCommand = new RootCommand("Maui.CodePush CLI — deploy OTA updates to .NET MAUI apps");
 

@@ -1,6 +1,5 @@
 using System.CommandLine;
 using Maui.CodePush.Cli.Services;
-using static Maui.CodePush.Cli.Commands.InitCommand;
 
 namespace Maui.CodePush.Cli.Commands;
 
@@ -17,11 +16,7 @@ public static class RollbackCommand
 
         var command = new Command("rollback", "Remove deployed updates from a device (reverts to embedded version)")
         {
-            modulesArgument,
-            deviceOption,
-            packageNameOption,
-            allOption,
-            restartOption
+            modulesArgument, deviceOption, packageNameOption, allOption, restartOption
         };
 
         command.SetAction(async (parseResult, _) =>
@@ -41,7 +36,7 @@ public static class RollbackCommand
                 packageName ??= config?.PackageName;
                 if (string.IsNullOrEmpty(packageName))
                 {
-                    WriteError("Package name required. Use --package-name or configure in .codepush.json");
+                    ConsoleUI.Error("Package name required. Use --package-name or .codepush.json");
                     return;
                 }
 
@@ -49,11 +44,14 @@ public static class RollbackCommand
                 adb.FindAdb(config?.AdbPath);
                 var deviceSerial = await adb.ResolveDeviceAsync(device);
 
+                ConsoleUI.Separator();
+                ConsoleUI.Info($"Rolling back on {deviceSerial}");
+                ConsoleUI.Blank();
+
                 if (all)
                 {
-                    WriteInfo($"Rolling back all modules on {deviceSerial}...");
-                    await adb.RemoveAllModulesAsync(deviceSerial, packageName);
-                    WriteSuccess("All modules rolled back to embedded version.");
+                    await ConsoleUI.SpinnerAsync("Removing all modules",
+                        async () => await adb.RemoveAllModulesAsync(deviceSerial, packageName));
                 }
                 else
                 {
@@ -63,34 +61,34 @@ public static class RollbackCommand
 
                     if (targetModules.Length == 0)
                     {
-                        WriteError("No modules specified. Pass module names or use --all.");
+                        ConsoleUI.Error("No modules specified. Pass module names or use --all.");
                         return;
                     }
 
                     foreach (var module in targetModules)
                     {
-                        await adb.RemoveModuleAsync(deviceSerial, packageName, module);
-                        WriteSuccess($"Rolled back {module}");
+                        await ConsoleUI.SpinnerAsync($"Rolling back {module}",
+                            async () => await adb.RemoveModuleAsync(deviceSerial, packageName, module));
                     }
                 }
 
                 if (restart)
                 {
-                    WriteInfo("Restarting app...");
-                    await adb.ForceStopAppAsync(deviceSerial, packageName);
-                    await Task.Delay(1000);
-                    await adb.StartAppAsync(deviceSerial, packageName);
-                    WriteSuccess("App restarted with embedded modules.");
+                    await ConsoleUI.SpinnerAsync("Restarting app", async () =>
+                    {
+                        await adb.ForceStopAppAsync(deviceSerial, packageName);
+                        await Task.Delay(1000);
+                        await adb.StartAppAsync(deviceSerial, packageName);
+                    });
                 }
-                else
-                {
-                    Console.WriteLine();
-                    WriteInfo("Restart the app to load the embedded modules.");
-                }
+
+                ConsoleUI.Blank();
+                ConsoleUI.Success("Rolled back to embedded modules.");
+                ConsoleUI.Blank();
             }
             catch (Exception ex) when (ex is FileNotFoundException or AdbException or InvalidOperationException)
             {
-                WriteError(ex.Message);
+                ConsoleUI.Error(ex.Message);
             }
         });
 
