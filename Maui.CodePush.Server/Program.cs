@@ -119,7 +119,7 @@ app.MapGet("/health", (MongoDbContext db) =>
 }).WithTags("Health").ExcludeFromDescription();
 
 // Prometheus metrics endpoint
-app.MapMetrics(); // exposes /metrics
+app.MapMetrics().DisableCors(); // exposes /metrics without applying the global CORS policy
 
 // Map endpoints
 app.MapAuthEndpoints();
