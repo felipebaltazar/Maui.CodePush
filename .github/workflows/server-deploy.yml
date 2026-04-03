@@ -96,6 +96,7 @@ jobs:
           password: ${{ secrets.VPS_PASSWORD }}
           script: |
             cd /opt/codepush
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u monk-seal --password-stdin
             docker compose pull
             docker compose up -d
             sleep 3
