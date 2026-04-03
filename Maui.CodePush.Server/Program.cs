@@ -95,9 +95,9 @@ Directory.CreateDirectory(uploadsPath);
 
 // Middleware
 app.UseCors();
+app.UseHttpMetrics(); // Prometheus HTTP request metrics
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseHttpMetrics(); // Prometheus HTTP request metrics
 
 // Health check
 app.MapGet("/health", (MongoDbContext db) =>
