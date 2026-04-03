@@ -7,6 +7,7 @@ using Maui.CodePush.Server.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using Prometheus;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -96,6 +97,29 @@ Directory.CreateDirectory(uploadsPath);
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseHttpMetrics(); // Prometheus HTTP request metrics
+
+// Health check
+app.MapGet("/health", (MongoDbContext db) =>
+{
+    try
+    {
+        return Results.Ok(new
+        {
+            status = "healthy",
+            service = "codepush-server",
+            company = "Monkseal",
+            timestamp = DateTime.UtcNow
+        });
+    }
+    catch
+    {
+        return Results.StatusCode(503);
+    }
+}).WithTags("Health").ExcludeFromDescription();
+
+// Prometheus metrics endpoint
+app.MapMetrics(); // exposes /metrics
 
 // Map endpoints
 app.MapAuthEndpoints();
