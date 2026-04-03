@@ -13,6 +13,10 @@ on:
       - '.github/workflows/server-deploy.yml'
   workflow_dispatch:
 
+permissions:
+  contents: write
+  packages: write
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository_owner }}/codepush-server
@@ -88,6 +92,11 @@ jobs:
     environment: Production
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1
         with:
@@ -102,3 +111,32 @@ jobs:
             sleep 3
             docker ps --filter name=codepush-server --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
             echo "Deploy complete"
+
+      - name: Create tag and release
+        run: |
+          VERSION="0.1.${{ github.run_number }}"
+          TAG="server-v${VERSION}"
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git tag -a "$TAG" -m "CodePush Server ${VERSION}"
+          git push origin "$TAG"
+
+          PREV_TAG=$(git tag -l "server-v*" --sort=-version:refname | head -2 | tail -1)
+          if [ -z "$PREV_TAG" ] || [ "$PREV_TAG" = "$TAG" ]; then
+            PREV_TAG=$(git rev-list --max-parents=0 HEAD)
+          fi
+
+          echo "## CodePush Server ${VERSION}" > changelog.md
+          echo "" >> changelog.md
+          echo "Docker: \`docker pull ghcr.io/${{ env.IMAGE_NAME }}:latest\`" >> changelog.md
+          echo "" >> changelog.md
+          echo "### Changes" >> changelog.md
+          git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges >> changelog.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: server-v0.1.${{ github.run_number }}
+          name: "CodePush Server 0.1.${{ github.run_number }}"
+          body_path: changelog.md
+          prerelease: false
