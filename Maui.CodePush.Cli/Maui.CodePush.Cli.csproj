@@ -10,8 +10,23 @@
 		<ToolCommandName>codepush</ToolCommandName>
 		<PackageId>dotnet-codepush</PackageId>
 		<Version>0.1.0-pre</Version>
-		<Description>CLI tool for Maui.CodePush — deploy OTA updates to .NET MAUI apps</Description>
+		<Authors>Monkseal</Authors>
+		<Company>Monkseal</Company>
+		<Copyright>Copyright (c) 2026 Monkseal</Copyright>
+		<Description>CodePush CLI by Monkseal — deploy OTA updates to .NET MAUI apps</Description>
+		<PackageProjectUrl>https://github.com/felipebaltazar/Maui.CodePush</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/felipebaltazar/Maui.CodePush</RepositoryUrl>
+		<PackageLicenseFile>LICENSE</PackageLicenseFile>
+		<PackageIcon>icon.png</PackageIcon>
+		<PackageTags>codepush;cli;ota;maui;mobile;monkseal</PackageTags>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
 	</PropertyGroup>
+
+	<ItemGroup>
+		<None Include="..\icon.png" Pack="True" PackagePath="" />
+		<None Include="..\LICENSE" Pack="True" PackagePath="" />
+		<None Include="..\README.md" Pack="True" PackagePath="" />
+	</ItemGroup>
 
 	<ItemGroup>
 		<PackageReference Include="System.CommandLine" Version="2.0.5" />

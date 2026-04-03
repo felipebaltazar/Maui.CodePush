@@ -1,16 +1,74 @@
-MIT License
+Monkseal CodePush License
+Version 1.0, April 2026
 
-Copyright (c) 2024 Felipe Baltazar
+Copyright (c) 2026 Monkseal. All rights reserved.
+
+TERMS AND CONDITIONS
+
+1. DEFINITIONS
+
+"Software" refers to CodePush for .NET MAUI (CodePush.Maui), including the
+library, CLI tool, server, documentation, and all associated source code.
+
+"Commercial Use" means any use of the Software in connection with a product
+or service that generates revenue, directly or indirectly, including but not
+limited to: paid applications, SaaS products, consulting services, and
+applications distributed by for-profit organizations.
+
+"Non-Commercial Use" means use for personal projects, education, research,
+or by non-profit organizations, where no revenue is generated.
+
+"Open Source Project" means a software project whose source code is publicly
+available under an OSI-approved license.
+
+2. NON-COMMERCIAL USE
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+of this Software, to use, copy, modify, and distribute the Software for
+Non-Commercial Use, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+  a) The above copyright notice and this license shall be included in all
+     copies or substantial portions of the Software.
+
+  b) Attribution to the original project must be clearly visible in the
+     application or documentation:
+     "Powered by Monkseal CodePush — https://github.com/felipebaltazar/Maui.CodePush"
+
+3. OPEN SOURCE PROJECTS
+
+Open Source Projects may use this Software free of charge, provided that:
+
+  a) The project's repository includes clear attribution to Monkseal CodePush
+     with a link to the original repository.
+
+  b) The project does not compete with or replicate the core functionality
+     of CodePush (OTA update distribution for mobile applications).
+
+4. COMMERCIAL USE
+
+Commercial Use of this Software requires an active paid subscription plan
+from Monkseal. Contact: https://github.com/felipebaltazar/Maui.CodePush
+
+Without a valid commercial license, Commercial Use is strictly prohibited.
+
+5. RESTRICTIONS
+
+Regardless of the type of use, the following are NOT permitted:
+
+  a) Creating competing products or services that provide OTA update
+     distribution for mobile applications using this Software's code,
+     architecture, or substantial portions thereof.
+
+  b) Offering this Software or derivatives as a hosted service (SaaS)
+     to third parties without a commercial license from Monkseal.
+
+  c) Removing, altering, or obscuring copyright notices, license terms,
+     or attribution requirements.
+
+  d) Sublicensing, selling, or redistributing the Software as a standalone
+     product.
+
+6. DISCLAIMER
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -19,3 +77,9 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+7. TERMINATION
+
+This license is automatically terminated if you violate any of its terms.
+Upon termination, you must destroy all copies of the Software in your
+possession.

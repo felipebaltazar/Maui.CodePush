@@ -1,8 +1,16 @@
-# Maui.CodePush
+<p align="center">
+  <img src="icon.png" alt="Monkseal CodePush" width="120" />
+</p>
 
-**Ship hotfixes to your .NET MAUI apps instantly. No app store review. No waiting.**
+<h1 align="center">CodePush for .NET MAUI</h1>
 
-Maui.CodePush is an over-the-air (OTA) update system for .NET MAUI, bringing the same capabilities that [Shorebird](https://shorebird.dev/) offers for Flutter and [CodePush](https://microsoft.github.io/code-push/) offered for React Native — now for the .NET ecosystem.
+<p align="center">
+  <strong>Ship hotfixes to your .NET MAUI apps instantly. No app store review. No waiting.</strong>
+  <br/>
+  <em>A <a href="https://github.com/felipebaltazar/Maui.CodePush">Monkseal</a> product</em>
+</p>
+
+CodePush is an over-the-air (OTA) update system for .NET MAUI, bringing the same capabilities that [Shorebird](https://shorebird.dev/) offers for Flutter and [CodePush](https://microsoft.github.io/code-push/) offered for React Native — now for the .NET ecosystem.
 
 > Push bug fixes, UI changes, and minor updates directly to your users' devices on **Android** and **iOS**, without going through app store review cycles.
 
@@ -288,4 +296,11 @@ See [CLAUDE.md](CLAUDE.md) for architecture documentation and [docs/PLAN.md](doc
 
 ## License
 
-See [LICENSE](LICENSE) for details.
+**Monkseal CodePush License** — See [LICENSE](LICENSE) for full terms.
+
+- **Non-commercial use**: Free, with attribution
+- **Open source projects**: Free, with attribution and no competing products
+- **Commercial use**: Requires an active paid subscription from Monkseal
+- **Restrictions**: Cannot create competing OTA update products or SaaS offerings
+
+Copyright (c) 2026 Monkseal. All rights reserved.

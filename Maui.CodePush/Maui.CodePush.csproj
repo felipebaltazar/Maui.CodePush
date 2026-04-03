@@ -10,10 +10,25 @@
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 		<Version>0.1.0-pre</Version>
 		<PackageId>CodePush.Maui</PackageId>
-		<Description>Code push / OTA updates for .NET MAUI apps. Push hotfixes directly to Android and iOS without app store review.</Description>
+		<Authors>Monkseal</Authors>
+		<Company>Monkseal</Company>
+		<Copyright>Copyright (c) 2026 Monkseal</Copyright>
+		<Description>Code push / OTA updates for .NET MAUI apps. Push hotfixes directly to Android and iOS without app store review. A Monkseal product.</Description>
+		<PackageProjectUrl>https://github.com/felipebaltazar/Maui.CodePush</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/felipebaltazar/Maui.CodePush</RepositoryUrl>
+		<PackageLicenseFile>LICENSE</PackageLicenseFile>
+		<PackageIcon>icon.png</PackageIcon>
+		<PackageTags>maui;codepush;ota;hotfix;update;mobile;monkseal</PackageTags>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">21.0</SupportedOSPlatformVersion>
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
 	</PropertyGroup>
+
+	<ItemGroup>
+		<None Include="..\icon.png" Pack="True" PackagePath="" />
+		<None Include="..\LICENSE" Pack="True" PackagePath="" />
+		<None Include="..\README.md" Pack="True" PackagePath="" />
+	</ItemGroup>
 
 	<ItemGroup>
 		<None Include="build\*.props" Pack="True" PackagePath="build" />

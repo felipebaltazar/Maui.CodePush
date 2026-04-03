@@ -78,6 +78,14 @@ public static class ConsoleUI
         Console.WriteLine($"  {DimGray}{b}{Reset}{new string(' ', Math.Max(0, vLeft))}{Gray}v0.1.0-pre  {DimGray}│{Reset}  {DimGray}OTA updates — no app store review{new string(' ', Math.Max(0, vRight))}{Reset}{DimGray}{b}{Reset}");
 
         Console.WriteLine(empty);
+
+        // Company
+        var company = "by Monkseal";
+        var cPad = (boxWidth - company.Length) / 2;
+        var cLine = new string(' ', cPad) + company + new string(' ', boxWidth - cPad - company.Length);
+        Console.WriteLine($"  {DimGray}{b}{Reset}{DimGray}{cLine}{Reset}{DimGray}{b}{Reset}");
+
+        Console.WriteLine(empty);
         Console.WriteLine(bottom);
         Console.WriteLine();
     }
