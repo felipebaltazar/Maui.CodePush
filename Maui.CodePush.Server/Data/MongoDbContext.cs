@@ -22,6 +22,9 @@ public class MongoDbContext
     public IMongoCollection<Subscription> Subscriptions => _database.GetCollection<Subscription>("subscriptions");
     public IMongoCollection<App> Apps => _database.GetCollection<App>("apps");
 
+    // Device auth flow
+    public IMongoCollection<DeviceCode> DeviceCodes => _database.GetCollection<DeviceCode>("deviceCodes");
+
     // Legacy — mantido para backward compatibility
     public IMongoCollection<Release> Releases => _database.GetCollection<Release>("releases");
 
@@ -93,5 +96,17 @@ public class MongoDbContext
         await Subscriptions.Indexes.CreateOneAsync(
             new CreateIndexModel<Subscription>(
                 Builders<Subscription>.IndexKeys.Ascending(s => s.AccountId)));
+
+        // Device codes — auto-expire via TTL index
+        await DeviceCodes.Indexes.CreateManyAsync([
+            new CreateIndexModel<DeviceCode>(
+                Builders<DeviceCode>.IndexKeys.Ascending(d => d.Code),
+                new CreateIndexOptions { Unique = true }),
+            new CreateIndexModel<DeviceCode>(
+                Builders<DeviceCode>.IndexKeys.Ascending(d => d.UserCode)),
+            new CreateIndexModel<DeviceCode>(
+                Builders<DeviceCode>.IndexKeys.Ascending(d => d.ExpiresAt),
+                new CreateIndexOptions { ExpireAfter = TimeSpan.Zero })
+        ]);
     }
 }

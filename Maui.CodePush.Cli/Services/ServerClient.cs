@@ -33,16 +33,16 @@ public class ServerClient
         return await response.Content.ReadFromJsonAsync<JsonElement>();
     }
 
-    public async Task<JsonElement> RegisterAsync(string email, string password, string name)
+    public async Task<JsonElement> CreateDeviceCodeAsync()
     {
-        var response = await _http.PostAsJsonAsync("api/auth/register", new { email, password, name });
+        var response = await _http.PostAsync("api/auth/device", null);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<JsonElement>();
+    }
 
-        if (!response.IsSuccessStatusCode)
-        {
-            var err = await response.Content.ReadAsStringAsync();
-            throw new InvalidOperationException($"Register failed ({response.StatusCode}): {err}");
-        }
-
+    public async Task<JsonElement> PollDeviceTokenAsync(string deviceCode)
+    {
+        var response = await _http.PostAsJsonAsync("api/auth/device/token", new { deviceCode });
         return await response.Content.ReadFromJsonAsync<JsonElement>();
     }
 

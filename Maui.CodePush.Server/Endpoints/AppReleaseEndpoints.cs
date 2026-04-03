@@ -31,7 +31,7 @@ public static class AppReleaseEndpoints
         ClaimsPrincipal user,
         MongoDbContext db,
         SubscriptionService subscriptionService,
-        IConfiguration configuration)
+        BlobStorageService blobStorage)
     {
         var accountId = GetAccountId(user);
         if (accountId is null) return Results.Unauthorized();
@@ -92,9 +92,6 @@ public static class AppReleaseEndpoints
             return Results.BadRequest(new { error = "moduleNames count must match the number of uploaded files." });
 
         var releaseId = Guid.NewGuid();
-        var uploadsPath = configuration["Uploads:Path"] ?? "uploads";
-        var releaseDir = Path.Combine(uploadsPath, appId.ToString(), "releases", releaseId.ToString());
-        Directory.CreateDirectory(releaseDir);
 
         var modules = new List<object>();
 
@@ -113,8 +110,7 @@ public static class AppReleaseEndpoints
             var hash = SHA256.HashData(fileBytes);
             var dllHash = Convert.ToHexStringLower(hash);
 
-            var filePath = Path.Combine(releaseDir, $"{moduleName}.dll");
-            await File.WriteAllBytesAsync(filePath, fileBytes);
+            await blobStorage.UploadReleaseAsync(appId, releaseId, moduleName, fileBytes);
 
             modules.Add(new { moduleName, dllHash, dllSize = fileBytes.Length });
         }
@@ -216,7 +212,7 @@ public static class AppReleaseEndpoints
         Guid releaseId,
         ClaimsPrincipal user,
         MongoDbContext db,
-        IConfiguration configuration)
+        BlobStorageService blobStorage)
     {
         var accountId = GetAccountId(user);
         if (accountId is null) return Results.Unauthorized();
@@ -228,18 +224,16 @@ public static class AppReleaseEndpoints
         if (release is null) return Results.NotFound();
 
         // Delete uploaded release files
-        var uploadsPath = configuration["Uploads:Path"] ?? "uploads";
-        var releaseDir = Path.Combine(uploadsPath, appId.ToString(), "releases", releaseId.ToString());
-        if (Directory.Exists(releaseDir))
-            Directory.Delete(releaseDir, recursive: true);
+        foreach (var module in release.DependencySnapshot)
+        {
+            await blobStorage.DeleteAsync("releases", $"{appId}/releases/{releaseId}/{module.ModuleName}.dll");
+        }
 
         // Delete all patches for this release and their files
         var patches = await db.Patches.Find(p => p.ReleaseId == releaseId).ToListAsync();
         foreach (var patch in patches)
         {
-            var patchFile = Path.Combine(uploadsPath, appId.ToString(), "patches", $"{patch.Id}.dll");
-            if (File.Exists(patchFile))
-                File.Delete(patchFile);
+            await blobStorage.DeleteAsync("patches", $"{appId}/patches/{patch.Id}.dll");
         }
 
         await db.Patches.DeleteManyAsync(p => p.ReleaseId == releaseId);

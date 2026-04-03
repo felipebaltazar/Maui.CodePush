@@ -21,6 +21,9 @@ public class Account
     [BsonElement("apiKey")]
     public string ApiKey { get; set; } = string.Empty;
 
+    [BsonElement("company")]
+    public string? Company { get; set; }
+
     [BsonElement("createdAt")]
     public DateTime CreatedAt { get; set; }
 }

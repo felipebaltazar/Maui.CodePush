@@ -1,4 +1,6 @@
 using System.CommandLine;
+using System.Diagnostics;
+using System.Text.Json;
 using Maui.CodePush.Cli.Services;
 
 namespace Maui.CodePush.Cli.Commands;
@@ -8,23 +10,15 @@ public static class LoginCommand
     public static Command Create()
     {
         var serverOption = new Option<string?>("--server", "-s") { Description = "Server URL (uses built-in default if omitted)" };
-        var emailOption = new Option<string>("--email", "-e") { Description = "Account email", Required = true };
-        var passwordOption = new Option<string>("--password") { Description = "Account password", Required = true };
-        var registerOption = new Option<bool>("--register") { Description = "Create a new account instead of logging in" };
-        var nameOption = new Option<string?>("--name") { Description = "Display name (required for --register)" };
 
-        var command = new Command("login", "Authenticate with a CodePush server and save credentials")
+        var command = new Command("login", "Authenticate via browser (opens monkseal.dev)")
         {
-            serverOption, emailOption, passwordOption, registerOption, nameOption
+            serverOption
         };
 
-        command.SetAction(async (parseResult, _) =>
+        command.SetAction(async (parseResult, ct) =>
         {
             var server = parseResult.GetValue(serverOption);
-            var email = parseResult.GetValue(emailOption)!;
-            var password = parseResult.GetValue(passwordOption)!;
-            var register = parseResult.GetValue(registerOption);
-            var name = parseResult.GetValue(nameOption);
 
             try
             {
@@ -39,39 +33,81 @@ public static class LoginCommand
                 }
 
                 var client = new ServerClient(server);
-                string? token = null;
-                string? apiKey = null;
 
-                if (register)
+                // Step 1: Get device code
+                var deviceResult = await ConsoleUI.SpinnerAsync("Requesting login code",
+                    () => client.CreateDeviceCodeAsync());
+
+                var deviceCode = deviceResult.GetProperty("deviceCode").GetString()!;
+                var userCode = deviceResult.GetProperty("userCode").GetString()!;
+                var verificationUrl = deviceResult.GetProperty("verificationUrl").GetString()!;
+                var interval = deviceResult.GetProperty("interval").GetInt32();
+
+                // Step 2: Open browser
+                ConsoleUI.Blank();
+                ConsoleUI.Info($"Your login code: {userCode}");
+                ConsoleUI.Blank();
+                ConsoleUI.Info("Opening browser to complete authentication...");
+
+                try
                 {
-                    if (string.IsNullOrEmpty(name))
+                    Process.Start(new ProcessStartInfo(verificationUrl) { UseShellExecute = true });
+                }
+                catch
+                {
+                    ConsoleUI.Info($"Open this URL in your browser: {verificationUrl}");
+                }
+
+                ConsoleUI.Blank();
+                ConsoleUI.Info("Waiting for authorization...");
+                ConsoleUI.Blank();
+
+                // Step 3: Poll for token
+                JsonElement? tokenResult = null;
+                var maxAttempts = 300 / interval; // 5 minutes max
+
+                for (var i = 0; i < maxAttempts; i++)
+                {
+                    await Task.Delay(interval * 1000, ct);
+
+                    try
                     {
-                        ConsoleUI.Error("--name is required for registration.");
-                        return;
+                        var poll = await client.PollDeviceTokenAsync(deviceCode);
+                        var pollStr = poll.GetRawText();
+
+                        if (pollStr.Contains("authorization_pending"))
+                            continue;
+
+                        if (pollStr.Contains("expired_token"))
+                        {
+                            ConsoleUI.Error("Login code expired. Run 'codepush login' again.");
+                            return;
+                        }
+
+                        if (poll.TryGetProperty("token", out _))
+                        {
+                            tokenResult = poll;
+                            break;
+                        }
                     }
-
-                    var result = await ConsoleUI.SpinnerAsync("Creating account",
-                        async () => await client.RegisterAsync(email, password, name));
-
-                    apiKey = result.GetProperty("apiKey").GetString();
-
-                    var loginResult = await ConsoleUI.SpinnerAsync("Logging in",
-                        async () => await client.LoginAsync(email, password));
-
-                    token = loginResult.GetProperty("token").GetString();
+                    catch
+                    {
+                        continue;
+                    }
                 }
-                else
+
+                if (tokenResult is null)
                 {
-                    var result = await ConsoleUI.SpinnerAsync("Logging in",
-                        async () => await client.LoginAsync(email, password));
-
-                    token = result.GetProperty("token").GetString();
-
-                    var authedClient = new ServerClient(server, token: token);
-                    var me = await authedClient.GetMeAsync();
-                    apiKey = me.GetProperty("apiKey").GetString();
+                    ConsoleUI.Error("Login timed out. Run 'codepush login' again.");
+                    return;
                 }
 
+                var token = tokenResult.Value.GetProperty("token").GetString();
+                var apiKey = tokenResult.Value.GetProperty("apiKey").GetString();
+                var email = tokenResult.Value.GetProperty("email").GetString();
+                var name = tokenResult.Value.GetProperty("name").GetString();
+
+                // Save to config
                 var config = loaded?.Config ?? new Models.CodePushConfig();
                 var dir = loaded?.ProjectDir ?? Directory.GetCurrentDirectory();
 
@@ -80,10 +116,9 @@ public static class LoginCommand
                 config.ApiKey = apiKey;
                 configManager.CreateConfig(dir, config);
 
-                ConsoleUI.Blank();
-                ConsoleUI.Success("Authenticated successfully");
-                ConsoleUI.Detail("Server", server);
-                ConsoleUI.Detail("Email", email);
+                ConsoleUI.Success("Authenticated successfully!");
+                ConsoleUI.Detail("Email", email ?? "");
+                ConsoleUI.Detail("Name", name ?? "");
                 if (apiKey?.Length > 16)
                     ConsoleUI.Detail("API Key", $"{apiKey[..16]}...");
                 ConsoleUI.Blank();
@@ -92,6 +127,32 @@ public static class LoginCommand
             {
                 ConsoleUI.Error(ex.Message);
             }
+        });
+
+        return command;
+    }
+
+    public static Command CreateRegisterCommand()
+    {
+        var command = new Command("register", "Create an account on the Monkseal website");
+
+        command.SetAction((_, _) =>
+        {
+            const string url = "https://monkseal.dev/register";
+            ConsoleUI.Info($"Opening {url}...");
+
+            try
+            {
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+                ConsoleUI.Success("Browser opened. Complete registration, then run: codepush login");
+            }
+            catch
+            {
+                ConsoleUI.Info($"Open this URL in your browser: {url}");
+            }
+
+            ConsoleUI.Blank();
+            return Task.CompletedTask;
         });
 
         return command;

@@ -1,0 +1,10 @@
+name = "codepush-cdn"
+main = "src/index.js"
+compatibility_date = "2024-12-01"
+
+routes = [
+  { pattern = "cdn.monkseal.dev/*", zone_name = "monkseal.dev" }
+]
+
+[vars]
+AZURE_STORAGE_ACCOUNT = "stmonksealcodepush"

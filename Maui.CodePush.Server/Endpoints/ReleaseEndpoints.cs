@@ -34,7 +34,7 @@ public static class ReleaseEndpoints
         ClaimsPrincipal user,
         MongoDbContext db,
         SubscriptionService subscriptionService,
-        IConfiguration configuration)
+        BlobStorageService blobStorage)
     {
         var accountId = GetAccountId(user);
         if (accountId is null) return Results.Unauthorized();
@@ -77,11 +77,6 @@ public static class ReleaseEndpoints
         var rolloutPercentage = int.TryParse(rolloutPercentageStr, out var rollout) ? rollout : 100;
 
         var releaseId = Guid.NewGuid();
-        var uploadsPath = configuration["Uploads:Path"] ?? "uploads";
-        var appDir = Path.Combine(uploadsPath, appId.ToString());
-        Directory.CreateDirectory(appDir);
-
-        var filePath = Path.Combine(appDir, $"{releaseId}.dll");
 
         byte[] fileBytes;
         using (var memoryStream = new MemoryStream())
@@ -93,7 +88,7 @@ public static class ReleaseEndpoints
         var hash = SHA256.HashData(fileBytes);
         var dllHash = Convert.ToHexStringLower(hash);
 
-        await File.WriteAllBytesAsync(filePath, fileBytes);
+        await blobStorage.UploadPatchAsync(appId, releaseId, fileBytes);
 
         var release = new Release
         {
@@ -156,7 +151,7 @@ public static class ReleaseEndpoints
     }
 
     private static async Task<IResult> DeleteRelease(
-        Guid appId, Guid releaseId, ClaimsPrincipal user, MongoDbContext db, IConfiguration configuration)
+        Guid appId, Guid releaseId, ClaimsPrincipal user, MongoDbContext db, BlobStorageService blobStorage)
     {
         var accountId = GetAccountId(user);
         if (accountId is null) return Results.Unauthorized();
@@ -167,10 +162,7 @@ public static class ReleaseEndpoints
         var release = await db.Releases.Find(r => r.Id == releaseId && r.AppId == appId).FirstOrDefaultAsync();
         if (release is null) return Results.NotFound();
 
-        var uploadsPath = configuration["Uploads:Path"] ?? "uploads";
-        var filePath = Path.Combine(uploadsPath, appId.ToString(), $"{releaseId}.dll");
-        if (File.Exists(filePath))
-            File.Delete(filePath);
+        await blobStorage.DeleteAsync("patches", $"{appId}/patches/{releaseId}.dll");
 
         await db.Releases.DeleteOneAsync(r => r.Id == releaseId);
 

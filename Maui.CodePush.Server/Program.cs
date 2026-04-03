@@ -7,6 +7,8 @@ using Maui.CodePush.Server.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using MongoDB.Driver;
+using Prometheus;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -67,6 +69,12 @@ builder.Services.AddAuthorization();
 // Services
 builder.Services.AddScoped<SubscriptionService>();
 builder.Services.AddSingleton<TokenService>();
+builder.Services.AddSingleton<BlobStorageService>();
+
+// Stripe — optional: features disabled when key is not set
+var stripeSecretKey = Environment.GetEnvironmentVariable("STRIPE_SECRET_KEY");
+if (!string.IsNullOrEmpty(stripeSecretKey))
+    Stripe.StripeConfiguration.ApiKey = stripeSecretKey;
 
 // CORS
 builder.Services.AddCors(options =>
@@ -92,10 +100,42 @@ using (var scope = app.Services.CreateScope())
 var uploadsPath = app.Configuration["Uploads:Path"] ?? "uploads";
 Directory.CreateDirectory(uploadsPath);
 
-// Middleware
+// Middleware — UseHttpMetrics before auth so all requests (including 401/403) are measured
 app.UseCors();
+app.UseHttpMetrics();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Health check with real MongoDB ping
+app.MapGet("/health", async (MongoDbContext db) =>
+{
+    try
+    {
+        // Probe MongoDB connectivity
+        await db.Accounts.Find(_ => true).Limit(1).FirstOrDefaultAsync();
+
+        return Results.Ok(new
+        {
+            status = "healthy",
+            service = "codepush-server",
+            company = "Monkseal",
+            timestamp = DateTime.UtcNow
+        });
+    }
+    catch
+    {
+        return Results.Json(new
+        {
+            status = "unhealthy",
+            service = "codepush-server",
+            timestamp = DateTime.UtcNow
+        }, statusCode: 503);
+    }
+}).WithTags("Health");
+
+// Prometheus metrics — restricted via nginx (only internal docker network reaches 8080)
+// RequireHost is spoofable; actual protection is iptables + nginx (port 8080 blocked externally)
+app.MapMetrics();
 
 // Map endpoints
 app.MapAuthEndpoints();
@@ -104,17 +144,7 @@ app.MapReleaseEndpoints();
 app.MapUpdateEndpoints();
 app.MapAppReleaseEndpoints();
 app.MapPatchEndpoints();
-
-// Subscription endpoints (mocked)
-app.MapPost("/api/subscription/validate", (ClaimsPrincipal user) =>
-{
-    return Results.Ok(new { active = true, plan = "pro", expiresAt = (DateTime?)null });
-}).RequireAuthorization().WithTags("Subscription");
-
-app.MapPost("/api/webhook/stripe", () =>
-{
-    // TODO: Stripe webhook integration
-    return Results.Ok(new { received = true });
-}).WithTags("Webhook");
+app.MapLandingPageEndpoints();
+app.MapStripeWebhookEndpoints();
 
 app.Run();

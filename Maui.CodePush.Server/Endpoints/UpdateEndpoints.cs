@@ -1,16 +1,32 @@
 using Maui.CodePush.Server.Data;
+using Maui.CodePush.Server.Services;
 using MongoDB.Driver;
 
 namespace Maui.CodePush.Server.Endpoints;
 
 public static class UpdateEndpoints
 {
+    private static string? GetCdnBaseUrl()
+    {
+        return Environment.GetEnvironmentVariable("CODEPUSH_CDN_URL");
+    }
+
+    private static string GetDownloadUrl(HttpRequest request, string container, string blobPath, Guid id)
+    {
+        var cdnBase = GetCdnBaseUrl();
+        if (!string.IsNullOrEmpty(cdnBase))
+            return $"{cdnBase}/{container}/{blobPath}";
+
+        // Fallback for self-hosted (no CDN configured)
+        return $"{request.Scheme}://{request.Host}/api/updates/download/{id}";
+    }
+
     public static RouteGroupBuilder MapUpdateEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/updates").WithTags("Updates");
 
         group.MapGet("/check", CheckForUpdate);
-        group.MapGet("/download/{releaseId:guid}", DownloadRelease);
+        group.MapGet("/download/{releaseId:guid}", DownloadFallback);
 
         return group;
     }
@@ -65,8 +81,6 @@ public static class UpdateEndpoints
             });
         }
 
-        var baseUrl = $"{request.Scheme}://{request.Host}";
-
         return Results.Ok(new
         {
             updateAvailable = true,
@@ -76,7 +90,7 @@ public static class UpdateEndpoints
                 {
                     name = latestRelease.ModuleName,
                     version = latestRelease.Version,
-                    downloadUrl = $"{baseUrl}/api/updates/download/{latestRelease.Id}",
+                    downloadUrl = GetDownloadUrl(request, "patches", $"{appId}/patches/{latestRelease.Id}.dll", latestRelease.Id),
                     hash = latestRelease.DllHash,
                     size = latestRelease.DllSize,
                     isMandatory = latestRelease.IsMandatory
@@ -109,13 +123,11 @@ public static class UpdateEndpoints
             });
         }
 
-        // Find all active patches for this release
         var activePatches = await db.Patches
             .Find(p => p.ReleaseId == appRelease.Id && p.IsActive)
             .SortByDescending(p => p.PatchNumber)
             .ToListAsync();
 
-        // Group by moduleName, take latest per module
         var latestPerModule = activePatches
             .GroupBy(p => p.ModuleName)
             .Select(g => g.First())
@@ -130,14 +142,12 @@ public static class UpdateEndpoints
             });
         }
 
-        var baseUrl = $"{request.Scheme}://{request.Host}";
-
         var patches = latestPerModule.Select(p => new
         {
             name = p.ModuleName,
             patchNumber = p.PatchNumber,
             version = p.Version,
-            downloadUrl = $"{baseUrl}/api/updates/download/{p.Id}",
+            downloadUrl = GetDownloadUrl(request, "patches", $"{p.AppId}/patches/{p.Id}.dll", p.Id),
             hash = p.DllHash,
             size = p.DllSize,
             isMandatory = p.IsMandatory
@@ -151,49 +161,41 @@ public static class UpdateEndpoints
         });
     }
 
-    private static async Task<IResult> DownloadRelease(
+    /// <summary>
+    /// Fallback download for self-hosted deployments without CDN.
+    /// Only used when CODEPUSH_CDN_URL is not configured.
+    /// </summary>
+    private static async Task<IResult> DownloadFallback(
         Guid releaseId,
         HttpRequest request,
         MongoDbContext db,
-        IConfiguration configuration)
+        BlobStorageService blobStorage)
     {
         var appToken = request.Headers["X-CodePush-Token"].ToString();
         if (string.IsNullOrWhiteSpace(appToken))
             return Results.Unauthorized();
 
-        var uploadsPath = configuration["Uploads:Path"] ?? "uploads";
-
-        // Try Patches collection first (new model)
+        // Try patches first
         var patch = await db.Patches.Find(p => p.Id == releaseId).FirstOrDefaultAsync();
         if (patch is not null)
         {
-            var patchApp = await db.Apps.Find(a => a.Id == patch.AppId && a.AppToken == appToken).FirstOrDefaultAsync();
-            if (patchApp is null)
-                return Results.Unauthorized();
+            var app = await db.Apps.Find(a => a.Id == patch.AppId && a.AppToken == appToken).FirstOrDefaultAsync();
+            if (app is null) return Results.Unauthorized();
 
-            var patchFilePath = Path.Combine(uploadsPath, patch.AppId.ToString(), "patches", $"{releaseId}.dll");
-            if (!File.Exists(patchFilePath))
-                return Results.NotFound(new { error = "Patch file not found on disk." });
-
-            var patchBytes = await File.ReadAllBytesAsync(patchFilePath);
-            return Results.File(patchBytes, "application/octet-stream", patch.FileName);
+            var data = await blobStorage.DownloadAsync("patches", $"{patch.AppId}/patches/{releaseId}.dll");
+            if (data is null) return Results.NotFound();
+            return Results.File(data, "application/octet-stream", $"{patch.ModuleName}.dll");
         }
 
-        // Fallback to legacy Releases collection
+        // Fallback: legacy releases
         var release = await db.Releases.Find(r => r.Id == releaseId).FirstOrDefaultAsync();
-        if (release is null)
-            return Results.NotFound();
+        if (release is null) return Results.NotFound();
 
-        var appEntity = await db.Apps.Find(a => a.Id == release.AppId && a.AppToken == appToken).FirstOrDefaultAsync();
-        if (appEntity is null)
-            return Results.Unauthorized();
+        var releaseApp = await db.Apps.Find(a => a.Id == release.AppId && a.AppToken == appToken).FirstOrDefaultAsync();
+        if (releaseApp is null) return Results.Unauthorized();
 
-        var filePath = Path.Combine(uploadsPath, release.AppId.ToString(), $"{releaseId}.dll");
-
-        if (!File.Exists(filePath))
-            return Results.NotFound(new { error = "Release file not found on disk." });
-
-        var fileBytes = await File.ReadAllBytesAsync(filePath);
-        return Results.File(fileBytes, "application/octet-stream", release.FileName);
+        var releaseData = await blobStorage.DownloadAsync("releases", $"{release.AppId}/{releaseId}.dll");
+        if (releaseData is null) return Results.NotFound();
+        return Results.File(releaseData, "application/octet-stream", release.FileName);
     }
 }

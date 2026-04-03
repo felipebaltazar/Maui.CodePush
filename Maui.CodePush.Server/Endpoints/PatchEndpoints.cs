@@ -30,7 +30,7 @@ public static class PatchEndpoints
         ClaimsPrincipal user,
         MongoDbContext db,
         SubscriptionService subscriptionService,
-        IConfiguration configuration)
+        BlobStorageService blobStorage)
     {
         var accountId = GetAccountId(user);
         if (accountId is null) return Results.Unauthorized();
@@ -97,12 +97,7 @@ public static class PatchEndpoints
         var dllHash = Convert.ToHexStringLower(hash);
 
         var patchId = Guid.NewGuid();
-        var uploadsPath = configuration["Uploads:Path"] ?? "uploads";
-        var patchesDir = Path.Combine(uploadsPath, appId.ToString(), "patches");
-        Directory.CreateDirectory(patchesDir);
-
-        var filePath = Path.Combine(patchesDir, $"{patchId}.dll");
-        await File.WriteAllBytesAsync(filePath, fileBytes);
+        await blobStorage.UploadPatchAsync(appId, patchId, fileBytes);
 
         var patch = new Patch
         {
@@ -179,7 +174,7 @@ public static class PatchEndpoints
         Guid patchId,
         ClaimsPrincipal user,
         MongoDbContext db,
-        IConfiguration configuration)
+        BlobStorageService blobStorage)
     {
         var accountId = GetAccountId(user);
         if (accountId is null) return Results.Unauthorized();
@@ -190,10 +185,7 @@ public static class PatchEndpoints
         var patch = await db.Patches.Find(p => p.Id == patchId && p.ReleaseId == releaseId && p.AppId == appId).FirstOrDefaultAsync();
         if (patch is null) return Results.NotFound();
 
-        var uploadsPath = configuration["Uploads:Path"] ?? "uploads";
-        var filePath = Path.Combine(uploadsPath, appId.ToString(), "patches", $"{patchId}.dll");
-        if (File.Exists(filePath))
-            File.Delete(filePath);
+        await blobStorage.DeleteAsync("patches", $"{appId}/patches/{patchId}.dll");
 
         await db.Patches.DeleteOneAsync(p => p.Id == patchId);
 
