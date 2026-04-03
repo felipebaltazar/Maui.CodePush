@@ -71,6 +71,11 @@ builder.Services.AddScoped<SubscriptionService>();
 builder.Services.AddSingleton<TokenService>();
 builder.Services.AddSingleton<BlobStorageService>();
 
+// Stripe — optional: features disabled when key is not set
+var stripeSecretKey = Environment.GetEnvironmentVariable("STRIPE_SECRET_KEY");
+if (!string.IsNullOrEmpty(stripeSecretKey))
+    Stripe.StripeConfiguration.ApiKey = stripeSecretKey;
+
 // CORS
 builder.Services.AddCors(options =>
 {
@@ -138,17 +143,7 @@ app.MapReleaseEndpoints();
 app.MapUpdateEndpoints();
 app.MapAppReleaseEndpoints();
 app.MapPatchEndpoints();
-
-// Subscription endpoints (mocked)
-app.MapPost("/api/subscription/validate", (ClaimsPrincipal user) =>
-{
-    return Results.Ok(new { active = true, plan = "pro", expiresAt = (DateTime?)null });
-}).RequireAuthorization().WithTags("Subscription");
-
-app.MapPost("/api/webhook/stripe", () =>
-{
-    // TODO: Stripe webhook integration
-    return Results.Ok(new { received = true });
-}).WithTags("Webhook");
+app.MapLandingPageEndpoints();
+app.MapStripeWebhookEndpoints();
 
 app.Run();
