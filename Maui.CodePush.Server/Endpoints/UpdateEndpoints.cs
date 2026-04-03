@@ -1,16 +1,22 @@
 using Maui.CodePush.Server.Data;
+using Maui.CodePush.Server.Services;
 using MongoDB.Driver;
 
 namespace Maui.CodePush.Server.Endpoints;
 
 public static class UpdateEndpoints
 {
+    private static string GetCdnBaseUrl()
+    {
+        return Environment.GetEnvironmentVariable("CODEPUSH_CDN_URL")
+            ?? "https://cdn.monkseal.dev";
+    }
+
     public static RouteGroupBuilder MapUpdateEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/updates").WithTags("Updates");
 
         group.MapGet("/check", CheckForUpdate);
-        group.MapGet("/download/{releaseId:guid}", DownloadRelease);
 
         return group;
     }
@@ -41,12 +47,14 @@ public static class UpdateEndpoints
         // New flow: releaseVersion present → AppRelease + Patches
         if (!string.IsNullOrWhiteSpace(releaseVersion))
         {
-            return await CheckForUpdateV2(request, db, appId, platform, releaseVersion, channel);
+            return await CheckForUpdateV2(db, appId, appToken, platform, releaseVersion, channel);
         }
 
         // Legacy flow: module + version → Release collection
         if (string.IsNullOrWhiteSpace(module) || string.IsNullOrWhiteSpace(version))
             return Results.BadRequest(new { error = "Either releaseVersion or both module and version are required." });
+
+        var cdnBase = GetCdnBaseUrl();
 
         var latestRelease = await db.Releases
             .Find(r => r.AppId == appId
@@ -65,8 +73,6 @@ public static class UpdateEndpoints
             });
         }
 
-        var baseUrl = $"{request.Scheme}://{request.Host}";
-
         return Results.Ok(new
         {
             updateAvailable = true,
@@ -76,7 +82,7 @@ public static class UpdateEndpoints
                 {
                     name = latestRelease.ModuleName,
                     version = latestRelease.Version,
-                    downloadUrl = $"{baseUrl}/api/updates/download/{latestRelease.Id}",
+                    downloadUrl = $"{cdnBase}/patches/{appId}/patches/{latestRelease.Id}.dll?token={appToken}",
                     hash = latestRelease.DllHash,
                     size = latestRelease.DllSize,
                     isMandatory = latestRelease.IsMandatory
@@ -86,9 +92,9 @@ public static class UpdateEndpoints
     }
 
     private static async Task<IResult> CheckForUpdateV2(
-        HttpRequest request,
         MongoDbContext db,
         Guid appId,
+        string appToken,
         string platform,
         string releaseVersion,
         string channel)
@@ -109,13 +115,11 @@ public static class UpdateEndpoints
             });
         }
 
-        // Find all active patches for this release
         var activePatches = await db.Patches
             .Find(p => p.ReleaseId == appRelease.Id && p.IsActive)
             .SortByDescending(p => p.PatchNumber)
             .ToListAsync();
 
-        // Group by moduleName, take latest per module
         var latestPerModule = activePatches
             .GroupBy(p => p.ModuleName)
             .Select(g => g.First())
@@ -130,14 +134,14 @@ public static class UpdateEndpoints
             });
         }
 
-        var baseUrl = $"{request.Scheme}://{request.Host}";
+        var cdnBase = GetCdnBaseUrl();
 
         var patches = latestPerModule.Select(p => new
         {
             name = p.ModuleName,
             patchNumber = p.PatchNumber,
             version = p.Version,
-            downloadUrl = $"{baseUrl}/api/updates/download/{p.Id}",
+            downloadUrl = $"{cdnBase}/patches/{p.AppId}/patches/{p.Id}.dll?token={appToken}",
             hash = p.DllHash,
             size = p.DllSize,
             isMandatory = p.IsMandatory
@@ -149,51 +153,5 @@ public static class UpdateEndpoints
             releaseVersion = appRelease.Version,
             patches
         });
-    }
-
-    private static async Task<IResult> DownloadRelease(
-        Guid releaseId,
-        HttpRequest request,
-        MongoDbContext db,
-        IConfiguration configuration)
-    {
-        var appToken = request.Headers["X-CodePush-Token"].ToString();
-        if (string.IsNullOrWhiteSpace(appToken))
-            return Results.Unauthorized();
-
-        var uploadsPath = configuration["Uploads:Path"] ?? "uploads";
-
-        // Try Patches collection first (new model)
-        var patch = await db.Patches.Find(p => p.Id == releaseId).FirstOrDefaultAsync();
-        if (patch is not null)
-        {
-            var patchApp = await db.Apps.Find(a => a.Id == patch.AppId && a.AppToken == appToken).FirstOrDefaultAsync();
-            if (patchApp is null)
-                return Results.Unauthorized();
-
-            var patchFilePath = Path.Combine(uploadsPath, patch.AppId.ToString(), "patches", $"{releaseId}.dll");
-            if (!File.Exists(patchFilePath))
-                return Results.NotFound(new { error = "Patch file not found on disk." });
-
-            var patchBytes = await File.ReadAllBytesAsync(patchFilePath);
-            return Results.File(patchBytes, "application/octet-stream", patch.FileName);
-        }
-
-        // Fallback to legacy Releases collection
-        var release = await db.Releases.Find(r => r.Id == releaseId).FirstOrDefaultAsync();
-        if (release is null)
-            return Results.NotFound();
-
-        var appEntity = await db.Apps.Find(a => a.Id == release.AppId && a.AppToken == appToken).FirstOrDefaultAsync();
-        if (appEntity is null)
-            return Results.Unauthorized();
-
-        var filePath = Path.Combine(uploadsPath, release.AppId.ToString(), $"{releaseId}.dll");
-
-        if (!File.Exists(filePath))
-            return Results.NotFound(new { error = "Release file not found on disk." });
-
-        var fileBytes = await File.ReadAllBytesAsync(filePath);
-        return Results.File(fileBytes, "application/octet-stream", release.FileName);
     }
 }

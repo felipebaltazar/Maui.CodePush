@@ -103,7 +103,7 @@ public static class AppEndpoints
     }
 
     private static async Task<IResult> DeleteApp(
-        Guid appId, ClaimsPrincipal user, MongoDbContext db, IConfiguration configuration)
+        Guid appId, ClaimsPrincipal user, MongoDbContext db, BlobStorageService blobStorage)
     {
         var accountId = GetAccountId(user);
         if (accountId is null) return Results.Unauthorized();
@@ -112,10 +112,7 @@ public static class AppEndpoints
         if (app is null) return Results.NotFound();
 
         // Delete releases and uploaded files
-        var uploadsPath = configuration["Uploads:Path"] ?? "uploads";
-        var appUploadsDir = Path.Combine(uploadsPath, appId.ToString());
-        if (Directory.Exists(appUploadsDir))
-            Directory.Delete(appUploadsDir, recursive: true);
+        await blobStorage.DeleteAllForAppAsync(appId);
 
         await db.AppReleases.DeleteManyAsync(r => r.AppId == appId);
         await db.Patches.DeleteManyAsync(p => p.AppId == appId);

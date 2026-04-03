@@ -68,6 +68,7 @@ builder.Services.AddAuthorization();
 // Services
 builder.Services.AddScoped<SubscriptionService>();
 builder.Services.AddSingleton<TokenService>();
+builder.Services.AddSingleton<BlobStorageService>();
 
 // CORS
 builder.Services.AddCors(options =>
