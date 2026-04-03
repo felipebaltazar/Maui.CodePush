@@ -100,12 +100,13 @@ public static class LandingPageEndpoints
 
                     subscription.StripeCustomerId = customer.Id;
 
-                    // Create Checkout session
+                    // Create Checkout session with coupon support
                     var sessionService = new Stripe.Checkout.SessionService();
                     var sessionOptions = new Stripe.Checkout.SessionCreateOptions
                     {
                         Customer = customer.Id,
                         Mode = "subscription",
+                        AllowPromotionCodes = true,
                         LineItems = new List<Stripe.Checkout.SessionLineItemOptions>
                         {
                             new() { Price = planInfo.StripePriceId, Quantity = 1 }
@@ -113,6 +114,17 @@ public static class LandingPageEndpoints
                         SuccessUrl = "https://codepush.monkseal.dev/success?session_id={CHECKOUT_SESSION_ID}",
                         CancelUrl = "https://codepush.monkseal.dev/pricing"
                     };
+
+                    // Apply coupon if provided
+                    if (!string.IsNullOrWhiteSpace(request.Coupon))
+                    {
+                        sessionOptions.Discounts = new List<Stripe.Checkout.SessionDiscountOptions>
+                        {
+                            new() { Coupon = request.Coupon }
+                        };
+                        // Can't use AllowPromotionCodes with Discounts simultaneously
+                        sessionOptions.AllowPromotionCodes = null;
+                    }
 
                     var session = await sessionService.CreateAsync(sessionOptions);
                     checkoutUrl = session.Url;
@@ -167,5 +179,6 @@ public record LandingPageRegisterRequest(
     string Password,
     string Name,
     string? Company,
-    string Plan
+    string Plan,
+    string? Coupon = null
 );
